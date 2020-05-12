@@ -1,0 +1,324 @@
+---
+title: "PCA for Correcting for Population Structure in a GWAS"
+biblio-style: apalike
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+
+# On the cluster
+
+## Prep VCFs for the PCA
+
+This is done on the cluster (code blocks not run when Rmd is rendered).
+
+```sh
+mkdir -p intermediates/203
+```
+
+We include just the springs and falls, since they are the ones going into the GWAS.
+
+Get a file of spring and fall fishIDs.  We will extract their read depths from the VCF and
+use my single-read-sampling package, 'srsStuff" to do a PCA.
+```sh
+awk -F"," '$NF=="Fall" || $NF == "Spring" {print $1}' data/wgs-chinook-samples.csv > intermediates/203/spring_falls.txt
+```
+
+We will do the PCA just with the assembled chromosomes.  That is still a
+lot of markers...about 8 million, I think.
+
+We need to catenate select the 128 fish
+from  each chromosome's VCF, while also filtering down to biallelic markers and 
+setting MAF>0.5, and sampled fraction > 0.5.   After that we catenate those files, then
+extract the read depths field.
+```sh
+# filter all the vcfs down to new ones for each chromosome
+ls -l chinook_WGS_processed/NC_037*.vcf.gz | \
+  awk 'BEGIN {OFS="\t"; print "index", "file"} {print ++n, $NF }' > intermediates/203/vfiles.txt
+
+
+sbatch ./script/203-bcftools-array.sh
+
+# catenate all those into a single bcf (which is 2.1 Gb zipped) and index it
+bcftools concat -o intermediates/203/all-chroms-filtered.bcf -Ob intermediates/203/filtered_NC_037*.bcf
+bcftools index intermediates/203/all-chroms-filtered.bcf
+
+# show some stats about that
+bcftools stats intermediates/203/all-chroms-filtered.bcf > intermediates/203/stats-all-chroms-filtered.txt
+```
+Here are the stats:
+```
+# SN    [2]id   [3]key  [4]value
+SN      0       number of samples:      128
+SN      0       number of records:      5939644
+SN      0       number of no-ALTs:      0
+SN      0       number of SNPs: 4840746
+SN      0       number of MNPs: 0
+SN      0       number of indels:       1098898
+SN      0       number of others:       0
+SN      0       number of multiallelic sites:   0
+SN      0       number of multiallelic SNP sites:       0
+```
+So, we are talking 5.8 million SNPs and 1.1 million indels, or so.  
+
+Now, we already know that the 14 individuals we dropped from Salmon River
+have such low coverge that their covariance values, when they occur together
+in pairs, have high variance and they end up getting pulled apart on PC-2, which is clearly
+spurious.  So, we will just drop them for both the PCA and the GWAS.
+
+The individuals with average read depth of genotypes < 0.45X are obtained from 004, but we will
+just redo the calculation here and put the 14 bad ones into `stored_results`.
+```r
+library(vcfR)
+library(tidyverse)
+rfi <- read.vcfR("data/greb1l-ish-region.vcf.gz")
+rfi_depths <- vcfR2tidy(rfi)$gt %>%
+  mutate(DP = ifelse(is.na(gt_DP), 0, gt_DP))
+
+dp_means <- rfi_depths %>%
+  group_by(Indiv) %>%
+  summarise(mean_depth = mean(DP)) %>%
+  arrange(mean_depth)
+dp_means
+
+# so the ones we want to drop are the first 14 of those:
+droppers <- dp_means %>% slice(1:14) %>% pull(Indiv)
+cat(droppers, sep = "\n")
+```
+Those go into `stored_results/203/low-depth-14-to-drop.txt`.
+
+Now, we use bcftools to drop those 14 from the file:
+```sh
+bcftools view -S ^stored_results/203/low-depth-14-to-drop.txt \
+  intermediates/203/all-chroms-filtered.bcf \
+  -Ob > intermediates/203/all-chroms-14-dropped.bcf
+```
+Then we are going to extract the read depths:
+```sh
+time bcftools query -f '%CHROM\t%POS[\t%AD]\n' intermediates/203/all-chroms-14-dropped.bcf  > intermediates/203/ac-114-fish-allele-depths.txt
+
+# that is pretty quick
+real    1m15.558s
+user    1m11.482s
+sys     0m3.225s
+
+# get the names of the fish in that file, in the order they are in
+bcftools query -l intermediates/203/all-chroms-14-dropped.bcf > intermediates/203/114-fish-names.txt  
+```
+
+
+## Do the PCA
+
+Get srsStuff set up and compute the covariance matrix
+```r
+# I installed it with a temp OAuth token:
+# devtools::install_github("eriqande/srsStuff", auth_token = "3a04dd77d331xxx....")
+library(tidyverse)
+library(srsStuff)
+
+# compute the covariance matrix
+system.time(
+  covar_114 <- srs_covar("intermediates/203/ac-114-fish-allele-depths.txt", 
+    sample_names = read_lines("intermediates/203/114-fish-names.txt"))
+)
+
+# now, we are going to write that out to stored results so that
+# it is easy to have and manipulate to make figures on my laptop.
+write_rds(covar_114, path = "stored_results/203/covar-matrix-etc-114-spring-fall-fish.rds", compress = "xz")
+```
+
+# Working from the laptop
+
+R code below here is evaluated when the notebook is rendered.
+
+Now prepare some stuff for processing and plotting things:
+```{r}
+library(tidyverse)
+
+meta <- read_csv("data/wgs-chinook-samples.csv") %>%
+  mutate(pop = str_replace_all(Population, "Fall|Spring|Winter", "") %>% str_trim()) %>%
+  select(-Population) %>%
+  mutate(
+    Population = recode(
+      pop,
+      "Salmon River" =  "Salmon R.",
+      "Feather River Hatchery" =  "Feather R.H.",
+      "Trinity River Hatchery" =  "Trinity R.H",
+      "San Joaquin River" =  "San Joaquin R.",
+      "Coleman Hatchery Late" =  "Coleman H.",
+      "Sacramento River" =  "Sacramento R. Winter Run",
+      "Butte Creek" =  "Butte Ck."
+    ),
+    Ecotype = recode(
+      run_type,
+      "Fall" =  "Fall Run",
+      "Spring" =  "Spring Run",
+      "Late Fall" =  "Late Fall Run",
+      "Winter" =  "Winter Run",
+    )) %>%
+  mutate(  # make a factor to be able to order the populations a little better
+    Population_f = factor(
+      Population,
+      levels = c(
+        "Sacramento R. Winter Run",
+        "San Joaquin R.",
+        "Butte Ck.",
+        "Coleman H.",
+        "Feather R.H.",
+        "Salmon R.",
+        "Trinity R.H"
+      )))
+
+# and make sure that our colors or here
+pca_colors <- c(
+  `Salmon R.` =  "#bae4b3",
+  `Feather R.H.` =  "#fee5d9",
+  `Trinity R.H` =  "#238b45",
+  `San Joaquin R.` =  "#fb6a4a",
+  `Coleman H.` =  "#fcbba1",
+  `Sacramento R. Winter Run` =  "#a50f15",
+  `Butte Ck.` = "#fc9272"
+)
+# and set our shape values
+pca_shapes <- c(
+  `Fall Run` = 21,
+  `Spring Run` = 24,
+  `Late Fall Run` = 25,
+  `Winter Run` = 23
+)
+
+# function
+prep_output <- function(A) {
+  
+  # first for each individual i, get the number of sites at which
+  # that individual had a read and also another individual, j, averaged
+  # over all j.  This tells us on average how many markers went into
+  # compute the covariance for each individual.
+  m <- A$M
+  diag(m) <- 0
+  ave_sites <- tibble(
+    vcf_name = A$sample_names,
+    ave_sites = rowMeans(m) * ncol(m) / (ncol(m) - 1)
+  )
+    
+  # do the whole eigendecomposition on the standard covariance matrix.
+  eig <- eigen(A$Cov)
+  colnames(eig$vectors) <- sprintf("PC-%02d", 1:ncol(eig$vectors))
+    
+  
+  pca_tib <- as_tibble(eig$vectors[,1:6]) %>%
+    mutate(vcf_name = A$sample_names) %>%
+    select(vcf_name, everything()) 
+  
+  pca_long <- pca_tib %>%
+    tidyr::gather(., key = "PC", "val", -vcf_name)
+
+  # then expand a grid of the possible comparisons (ordered)
+  pca_pairs <- expand.grid(vcf_name = pca_tib$vcf_name,
+                      PCx = sprintf("PC-%02d", 1:6),
+                      PCy = sprintf("PC-%02d", 1:6),
+                      stringsAsFactors = FALSE) %>%
+    tibble::as_tibble() %>%
+    dplyr::left_join(., pca_long, by = c("vcf_name", "PCx" = "PC")) %>%
+    dplyr::rename(val_x = val) %>%
+    dplyr::left_join(pca_long, by = c("vcf_name", "PCy" = "PC")) %>%
+    dplyr::rename(val_y = val)  %>% 
+    left_join(ave_sites, by = "vcf_name") %>% # and here, join on some meta data
+    left_join(meta, by = "vcf_name")
+  
+  
+  # and now we are going to the the same sort of thing, but on the covariance
+  # matrix computed by the corrlations estimated a la Weir and Goudet
+  WaG <- (A$IBS - A$Mt_S) / (1 - A$Mt_S)
+  eig <- eigen(WaG)
+  colnames(eig$vectors) <- sprintf("PC-%02d", 1:ncol(eig$vectors))
+    
+  
+  pca_tib <- as_tibble(eig$vectors[,1:6]) %>%
+    mutate(vcf_name = A$sample_names) %>%
+    select(vcf_name, everything()) 
+  
+  pca_long <- pca_tib %>%
+    tidyr::gather(., key = "PC", "val", -vcf_name)
+  
+  pcp <- expand.grid(vcf_name = pca_tib$vcf_name,
+                      PCx = sprintf("PC-%02d", 1:6),
+                      PCy = sprintf("PC-%02d", 1:6),
+                      stringsAsFactors = FALSE) %>%
+    tibble::as_tibble() %>%
+    dplyr::left_join(., pca_long, by = c("vcf_name", "PCx" = "PC")) %>%
+    dplyr::rename(WaG_x = val) %>%
+    dplyr::left_join(pca_long, by = c("vcf_name", "PCy" = "PC")) %>%
+    dplyr::rename(WaG_y = val)
+  
+  # then join those both and return them
+  left_join(pcp, pca_pairs,
+            by = c("vcf_name", "PCx", "PCy"))
+}
+
+```
+
+Then use that to make a figure:
+```{r, fig.width=14, fig.height=14}
+covar_114 <- read_rds("stored_results/203/covar-matrix-etc-114-spring-fall-fish.rds")
+allf <- prep_output(covar_114)
+
+bp <- ggplot(allf, aes(x = val_x, y = val_y, fill = Population_f, shape = Ecotype)) + 
+  facet_grid(PCy ~ PCx) +
+  geom_point(size = 3, stroke = 0.15) +
+  scale_fill_manual(values = pca_colors) +
+  scale_shape_manual(values = pca_shapes) +
+  theme_bw() +
+  guides(fill = guide_legend(override.aes = list(shape = 22, stroke = 0.1, size = 6)),
+         shape = guide_legend(override.aes = list(stroke = 0.35, size = 4))
+         )
+  
+dir.create("outputs/203", recursive = TRUE, showWarnings = FALSE)
+ggsave(bp, filename = "outputs/203/spring-fall-pca.pdf", width = 20, height = 20)
+
+# and print it here
+bp
+```
+
+It is clear that the first PC separates Klamath from Sacramento basin.
+PC-2 separates Butte Creek from the rest of the Sacramento basin. PC-3 
+separates Trinity River from Salmon River fish, and then on PC-4 we
+start seeing spring and fall in the Trinity separating.
+
+Now, at the end, we will save the principal components in a text file
+for use as covariates in a GWAS with ANGSD.
+```{r}
+eig <- eigen(covar_114$Cov)
+eigenvectors <- eig$vectors
+rownames(eigenvectors) <- covar_114$sample_names
+colnames(eigenvectors) <- sprintf("PC-%02d", 1:ncol(eig$vectors))
+write.table(eigenvectors, file = "stored_results/203/eigenvectors.tsv", quote = FALSE, row.names = TRUE, col.names = TRUE)
+```
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+
+
+

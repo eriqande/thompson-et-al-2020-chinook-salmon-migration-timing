@@ -1,0 +1,14 @@
+DPCh_plate1_B03_S15
+DPCh_plate1_C04_S28
+DPCh_plate1_B01_S13
+DPCh_plate1_C01_S25
+DPCh_plate1_F01_S61
+DPCh_plate1_E03_S51
+DPCh_plate1_E04_S52
+DPCh_plate1_B04_S16
+DPCh_plate1_G04_S76
+DPCh_plate1_H03_S87
+DPCh_plate1_A03_S3
+DPCh_plate1_F04_S64
+DPCh_plate1_F03_S63
+DPCh_plate1_A04_S4

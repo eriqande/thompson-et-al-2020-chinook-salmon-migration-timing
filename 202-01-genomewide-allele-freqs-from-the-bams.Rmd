@@ -1,0 +1,254 @@
+---
+title: "Genome-wide Allele Frequencies straight from the BAMs "
+biblio-style: apalike
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+Here we compute the absolute value of the allele freq difference between spring and fall
+run fish over all the assembled chromosomes and in scaffolds > XX KB. Previously (in 002) we used a combination
+of VCF files and BAMs to do this.  There was some concern that this might have caused artifacts.
+Although it is very unlikely such artifacts could change the findings, for completeness, here
+we compute allele frequencies using ANGSD directly from the BAMs.
+
+# Parts done on a the cluster
+
+Things in this section were all done on a cluster.  The code in this section is not evaluated 
+when rendering the notebook. The code, however, shows how the allele frequencies were
+calculated and then placed into `stored_results`.  
+
+## Preparing bamlists
+
+Note that 000 must have been run before this to fill the `chinook_WGS_processed` directory.
+
+First, make some directories:
+```sh
+mkdir -p intermediates/202
+```
+
+Get bamlists of springs and falls, and also make a Bam-list that contains both of them.
+```sh
+awk -F"," '$NF=="Fall" {print "chinook_WGS_processed/" $1 ".rmdup.bam"}' data/wgs-chinook-samples.csv > intermediates/202/fall.bamlist
+awk -F"," '$NF=="Spring" {print "chinook_WGS_processed/" $1 ".rmdup.bam"}' data/wgs-chinook-samples.csv > intermediates/202/spring.bamlist
+```
+
+## Break genome up into a lot of separate jobs
+
+Now, make a bunch of files holding genomic regions for an array in which the genome is broken
+down into roughly 1 Mb fragments, or collections of fewer than a 100 scaffolds.
+```sh
+module load bio/samtools
+
+# get file of all scaffolds represented in the BAMs:
+samtools view -H chinook_WGS_processed/DPCh_plate1_A01_S1.rmdup.bam | awk '/^@SQ/' | sed 's/:/ /g;' | \
+   awk '{print $3, $NF}' > intermediates/202/chroms-and-lengths.txt
+   
+# now, break those regions into genomic coordinates in files
+mkdir intermediates/202/region_files
+
+# first make a flat list of them
+awk '
+  BEGIN {idx = -1}
+  idx == -1 {start = 1;  rem = $2; idx = 0;}
+  $NF > 1e6 { # anything longer than 1 Mb gets broken up
+  
+    if(just_inced_idx == 1) {
+      idx--;
+      just_inced_idx = 0;
+    }
+    rem = $NF;  # set the remaining length whenever you get into a new fragment
+
+    start = 1;
+    if(rem > 1e6) {
+      while(rem > 0) {
+        right = start + 1e06 - 1;
+        if(right > $2) {
+          right = $2;
+        }
+        rem = rem - 1e06
+        printf("%d\t%s:%d-%d\n", ++idx, $1, start, right);
+        start = right + 1
+      }
+    }
+    tot=0;
+    num=0
+    next;
+  }
+  
+  {  # otherwise, here we deal with any scaffolds less than 1e06
+    just_inced_idx = 0
+    tot+=$2;
+    num++;
+    printf("%d\t%s:%d-%d\n", idx, $1, 1, $2);
+    if(tot > 1e06 || num >= 100) {
+      tot = 0;
+      num = 0;
+      idx++;
+      just_inced_idx = 1;
+    }
+  }
+' intermediates/202/chroms-and-lengths.txt > intermediates/202/region-flat-file.tsv
+
+# now, break those down into separate files
+awk '
+{
+  if(fidx>0 && fidx<$1) {
+    close(file);
+  }
+  fidx = $1
+    
+  file = sprintf("intermediates/202/region_files/%04d.txt", fidx); 
+  print $2 > file;
+}' intermediates/202/region-flat-file.tsv
+
+```
+
+
+
+## Job array for estimating alle freqs in springs and falls
+
+Make some directories to put results
+```sh
+mkdir -p intermediates/202/MAFS
+mkdir -p intermediates/202/{slurm_out,slurm_err,stderr,stdout}
+```
+
+Run a job array.
+```sh
+# then launch that as an array of 2492 jobs
+sbatch script/202-01-angsd-array.sh
+# Submitted batch job 44737
+```
+
+That did not take too long, but check to see if there are any failures:
+```sh
+for i in intermediates/202/stderr/*stderr; do gotit=$(tail -n 1 $i | awk 'BEGIN {msg="No"} /ALL done/ {msg="Yes"} END {print msg}'); if [ $gotit = No ]; then echo $i; fi; done
+```
+Nope!  Setting minMapQ=30 removed the couple of memory failures we had previously.
+
+
+## Joining and filtering the allele freqs
+
+Finally, put them all together into a single file for
+springers and a single file for falls:
+```sh
+mkdir intermediates/202/tmp-agged-mafs
+cat intermediates/202/MAFS/fall.*.mafs.gz | zcat | awk 'NR==1 {print; next} /^chromo/ {next} {print}'  > intermediates/202/tmp-agged-mafs/fall-mafs-from-bam.mafs
+cat intermediates/202/MAFS/spring.*.mafs.gz | zcat | awk 'NR==1 {print; next} /^chromo/ {next} {print}' > intermediates/202/tmp-agged-mafs/spring-mafs-from-bam.mafs
+```
+
+Now, read them into R and join them there
+```r
+library(tidyverse)
+
+ff <- read_tsv("intermediates/202/tmp-agged-mafs/fall-mafs-from-bam.mafs")
+sf <- read_tsv("intermediates/202/tmp-agged-mafs/spring-mafs-from-bam.mafs")
+
+# now inner join them on chrom and pos
+joined <- inner_join(ff, sf, by = c("chromo", "position"))
+
+# check that there are none that have major/minor mixed up:
+joined %>% filter(major.x != major.y)
+
+# now arrange by abs_diff
+abs_diffs_from_bams <- joined %>%
+  mutate(abs_diff = abs(knownEM.x - knownEM.y)) %>%
+  select(chromo, position, abs_diff)
+  
+# that has 13.6 million rows.  Let's filter it down to diffs > 0.25
+# as we use for the plot in the paper.
+abs_diffs_from_bams_gt0.25 <- abs_diffs_from_bams %>%
+  filter(abs_diff > 0.25)
+  
+# that ends up being only 46K variants or so.  
+
+# save that in stored results
+dir.create("stored_results/202")
+write_rds(abs_diffs_from_bams_gt0.25, path = "stored_results/202/abs_diffs_from_bams_gt0.25.rds", compress = "xz")
+```
+
+Final thing we need to do is get the chromosome lengths from one of the bam files
+and put those into stored results.
+```sh
+module load bio/samtools
+
+samtools view -H chinook_WGS_processed/DPCh_plate1_A01_S1.rmdup.bam | awk -F":" '/^@SQ/ {print $2, $3}' | awk 'BEGIN {printf("Chromosome\tchrom_length\n");} {printf("%s\t%s\n",$1, $3);}' | gzip -c > stored_results/202/chrom_lengths_from_bams.txt.gz
+
+```
+
+# Making the plot from the stored results
+
+This part is done on a laptop, not the cluster, and will be evaluated
+when the RMarkdown document is rendered.
+
+Get the chrom lengths and data
+```{r, message=FALSE}
+library(tidyverse)
+dir.create("outputs/202", recursive = TRUE, showWarnings = FALSE)
+
+chrom_lengths <- read_tsv("stored_results/202/chrom_lengths_from_bams.txt.gz")
+freq_diffs <- read_rds("stored_results/202/abs_diffs_from_bams_gt0.25.rds") %>%
+  rename(Chromosome = chromo)
+```
+
+Source the functions we need:
+```{r}
+source("R/manhattan_plot_funcs.R")
+```
+
+Now, do it:
+```{r}
+sf_bammed <- my_mh_prep(freq_diffs, chrom_lengths)
+
+mh_plot_from_bams <- plot_mh(sf_bammed$snps, sf_bammed$axisdf) +
+  xlab("Position along chromosome") +
+  ylab("Absolute value of allele frequency difference, spring-run vs. fall-run")
+
+mh_plot_from_bams
+```
+
+Note that this is essentially identical to the same plot made using as input to ANGSD the
+genotype likelihoods in the VCF file computed by GATK, and then filling the "holes" (sections
+where GATK apparently failed) with allele frequencies estimated directly from the BAMs. 
+
+The only difference, interestingly, is the omission in the present plot of some sites that have
+an absolute difference closer to 1.00.  Such sites do not occur in the current plot
+because ANGSD does discovery
+on each data set (fall and spring) separately.  We tried forcing the same sites to be called in the
+two ANGSD runs using the -sites option.  We received a warning that the -sites option was still in beta,
+and, in fact, the results did not appear correct.  Given this, it is clear to us that our method of
+using the GATK-called-and-VCF-stored genotype likelihoods as input to ANGSD, while filling holes by going
+back to the original BAM files is preferable and shall remain.  While it may appear ad hoc, it does
+actually allow us to consistently compare the same sites between the two run types, and it obviously
+does not make any difference to the main finding of a single peak on Chromosome 28.  Additionally, use
+of the GATK-derived VCF file, where possible, allows us to capture indel variation, which is disregarded
+by ANGSD. 
+
+
+
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+

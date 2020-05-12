@@ -1,0 +1,15 @@
+﻿pop,longitude,latitude,name_lat,name_long,line_long,ecotype,lineage,analysis,pch,font_type,color2
+"Siletz River (S, F)",-123.967265,44.883683,44,-127.75,-125.8,early and late,Coast OR,amplicon,21,plain,white
+Klamath River (F),-122.441367,41.929725,42.25,-127.1,-125,late,Klamath,amplicon,21,bold,white
+"Klamath Estuary (S, F)",-124.079192,41.542976,41.75,-127.4,-124.9,early and late,Klamath,amplicon,21,bold,white
+"Salmon River (S, F)",-123.322762,41.256983,41.25,-127.55,-125.4,early and late,Klamath,both,21,bold,black
+"Trinity River (S, F)",-122.798015,40.724882,40.8,-127.55,-125.4,early and late,Klamath,both,21,bold,black
+Russian River (F),-122.858802,38.548051,38.5,-127.5,-125.5,late,Coast CA,amplicon,21,plain,white
+Eel River (F),-123.810464,40.318218,39.25,-127.5,-126,late,Coast CA,amplicon,21,plain,white
+Battle Creek (LF),-122.000247,40.423585,41,-117.75,-119.7,late,Sacramento,both,21,bold.italic,black
+"Butte Creek (S, F)",-121.660944,39.781058,40,-118,-119.9,early and late,Sacramento,both,21,bold.italic,black
+"Feather River (S, F)",-121.553172,39.517971,39.25,-117.75,-119.9,early and late,Sacramento,both,21,bold.italic,black
+San Joaquin ,-119.715244,36.987154,38.7,-117.9,-118.25,late,Sacramento,whole_geno,21,bold.italic,ivory4
+River (F),,,38.3,-117.75,-118.25,late,Sacramento,whole_geno,21,bold.italic,ivory4
+Sacramento River (W),-122.446078,40.611885,41.5,-117.45,-119.9,early,Sacramento,both,21,bold.italic,black
+"Mill-Deer creeks (S, F)",-121.961482,39.995055,40.5,-117.5,-120,early and late,Sacramento,ampllicon,21,bold.italic,white

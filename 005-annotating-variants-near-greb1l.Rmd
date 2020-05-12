@@ -1,0 +1,369 @@
+---
+title: "Annotating Variants Near GREB1L"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+
+# Packages and paths 
+```{r}
+library(tidyverse)
+library(vcfR)
+```
+
+
+# Build a SNPeff database
+
+As instructed in the README file, be sure you have downloaded Chinook Otsh_v1.0 genome and
+the gff files and have put the (or symlinked them) in the `genome` directory.
+
+Also, ensure that you have installed `snpEff` as described in the README.
+
+Building the data base involves setting some symlinks within the snpEff directory
+and running it:
+```{sh}
+cd snpEff_v4_3t_core/snpEff/
+mkdir -p data/Otsh_v1.0
+cd data/Otsh_v1.0/
+
+# get rid of these if the symlinks already exist from a previous run
+rm -f genes.gff.gz
+rm -f sequences.fa
+# here we symlink sequences.fa to the genome and genes.gff.gz to the gff file.
+ln -s ../../../../genome/GCF_002872995.1_Otsh_v1.0_genomic.gff.gz genes.gff.gz
+ln -s ../../../../genome/Otsh_v1.0_genomic.fna sequences.fa
+
+
+```
+
+And then adding some lines to the config file:
+```{sh}
+# only to this if the lines have not already been added
+# (i.e., if this has alread been run)
+if grep -q Otsh_v1.0 snpEff_v4_3t_core/snpEff/snpEff.config; then
+    echo "Otsh_v1.0 already added to config file"
+else
+    echo "Adding Otsh_v1.0 to config file"
+    
+    echo "
+# Chinook salmon genome, Otsh_v1.0
+Otsh_v1.0.genome : Oncorhynchus_tshawytscha_Otsh_V1.0
+" >> snpEff_v4_3t_core/snpEff/snpEff.config
+fi
+```
+
+Now, run it.  This takes about 5 minutes.
+```{sh}
+cd snpEff_v4_3t_core/snpEff
+java -jar snpEff.jar build -gff3 -v Otsh_v1.0 > snpEff_stdout.log 2> snpEff_stderr.log
+```
+
+
+# Running SNPeff
+
+Having created a SNPeff data base from the Otshv1.0 genome and gff files using the standard
+procedures we should be able to annotate our little 5.16 Mb segment of DNA pretty quickly.
+
+```{sh}
+DIR=$(pwd)
+
+mkdir -p intermediates/005
+
+cd snpEff_v4_3t_core/snpEff
+
+rm -f $DIR/intermediates/005/greb1l-5Mb-snpEff.vcf 
+rm -f $DIR/intermediates/005/greb1l-5Mb-snpEff.vcf.gz 
+
+java -jar snpEff.jar ann Otsh_v1.0 $DIR/data/greb1l-ish-region.vcf.gz > $DIR/intermediates/005/greb1l-5Mb-snpEff.vcf
+
+# after that, bgzip it and index it
+cd $DIR/intermediates/005
+bgzip greb1l-5Mb-snpEff.vcf
+bcftools index -t greb1l-5Mb-snpEff.vcf.gz 
+```
+
+
+Now that those are there, I will be able to use them later, attaching them to
+the imputed variant data and computing some things.  To facilitate
+that, let's read it into R and clean it up and resave.
+
+
+# Read results into R and save in outputs
+
+```{r}
+annoV <- read.vcfR("intermediates/005/greb1l-5Mb-snpEff.vcf.gz")
+
+TT <- vcfR2tidy(annoV, info_only = TRUE)
+```
+
+# Have a look at some possible effect variants
+
+Now, let's break out the first three columns of the snpEff annotation.
+```{r, warning=FALSE}
+# there are warnings here because we are just grabbing the first three
+# columns of many with separate()
+TTS <- TT$fix %>%
+  separate(ANN, into = c("snp_eff_var", "snp_eff_what", "snp_eff_effect"), remove = FALSE, sep = "\\|")
+```
+
+Count up what we see for effects:
+```{r}
+TTS %>%
+  count(snp_eff_effect, snp_eff_what)
+```
+
+Let's go ahead and save that.
+```{r}
+dir.create("outputs/005", recursive = TRUE, showWarnings = FALSE)
+write_rds(TTS, path = "outputs/005/variants-and-annos-5.16.rds", compress = "xz")
+```
+
+We will focus on what we find from 12.1 to 12.6 here, as that encompasses GREB1L and ROCK1 and is
+what we will show for the "moderate zoom" raster
+```{r}
+FocReg <- TTS %>%
+  filter(POS > 12.1e6 & POS < 12.6e6)
+
+# summarize:
+FocReg %>%
+  count(snp_eff_effect)
+```
+
+Let's have a quick look at the interesting ones:
+```{r}
+FocReg %>% filter(snp_eff_effect != "MODIFIER") %>% select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN)
+```
+
+So, now, let's just look at the HIGH and MODERATE ones there:
+```{r}
+FocReg %>% filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>% select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN)
+```
+
+
+Let's write this out:
+```{r}
+candidates <- FocReg %>% filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>% select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN, everything())
+
+write_rds(candidates, path = "outputs/005/candidate-mutations-12.1_to_12.6.rds")
+```
+
+# Look further at the candidate variants 
+
+We grab the imputed SNPs and inferred haplotypes from 305 here to make comparisons on the
+allele frequencies at the candidate SNPs here.
+```{r}
+big_haps2 <- read_rds(path = "outputs/004/big_haps2.rds")
+```
+
+
+Check if any of the candidate variants are not in there:
+```{r}
+candidates %>%
+  anti_join(big_haps2, by = "POS")
+```
+
+
+## Check up on positions not included in big_haps2
+
+OK, that is interesting.  Those must have gotten filtered out.  The filtering rules we used in 004 were:
+
+1. biallelic (this just drops 1000 or so out of 49,000.  Seems reasonable).
+2. Genotype call in the vcf for more then 40% of the individuals.
+3. Minor allele freq > 0.05
+
+I am going to look at these markers:
+```sh
+bcftools index -t  intermediates/004/fish_for_tree.vcf.gz
+
+# this one has only 2 copies of the alt allele
+bcftools view -H  intermediates/004/fish_for_tree.vcf.gz NC_037124.1:12202720
+
+# this one is also a low frequency variant (9 copies detected in data set, out of 202)
+bcftools view -H  intermediates/004/fish_for_tree.vcf.gz NC_037124.1:12237855
+
+# this one also is just two copies of the alt allele
+bcftools view -H  intermediates/004/fish_for_tree.vcf.gz NC_037124.1:12239678
+
+
+# This HIGH-effect candidate is clearly not associated with anything:
+bcftools view -H  intermediates/004/fish_for_tree.vcf.gz NC_037124.1:12246066 | awk '{for(i=10; i<=NF;i++) print $i}' | awk -F":" 'BEGIN {SUBSEP = "   "} {n[$1]++} END {for(i in n) print i, n[i]}' 
+./. 57
+0/0 95
+0/1 6
+1/1 2
+# and note that those "homozygotes" only have 1 read each, so are likely hets.
+
+# and finally we check the last one, which shows us 10 out 204 allele calls.  Nope! not associated in any way.
+bcftools view -H  intermediates/004/fish_for_tree.vcf.gz NC_037124.1:12471068
+
+```
+
+So, it is not like we are missing any of these in the list of markers we dealt with for 
+any reason other than there is no way they are associated with anything.
+
+# Look at imputed genotypes at different candidate sites
+
+So, now let us look at the imputed genotypes at all these sites. It might be useful to identify haplotypes as
+"spring" or "fall" lineage.  So, let's do that by enumerating the number of spring alleles in the RoSA, too.
+```{r}
+big_haps3 <- big_haps2 %>%
+  group_by(Indiv, haplo) %>%
+  mutate(num_S_in_RoSA = sum(alle2[POS > 12.26e6 & POS < 12.29e6] == "S")) %>%
+  semi_join(candidates, by = "POS") %>%
+  ungroup()
+  
+```
+
+Look at the distribution of number of S alleles in the RoSA:
+```{r}
+big_haps3 %>%
+  group_by(Indiv, haplo) %>%
+  summarise(num_S_in_RoSA = num_S_in_RoSA[1]) %>%
+  ggplot(aes(x = num_S_in_RoSA)) +
+  geom_histogram()
+```
+
+So, we can easily call anything with more than 100 spring alleles part of the spring-run haplotype group.
+```{r}
+big_haps4 <- big_haps3 %>%
+  mutate(haplo_group = ifelse(num_S_in_RoSA > 100, "early", "late"))
+```
+
+Now we can compute the frequencies of these different alleles when we break things up by different groups.
+
+Here, just using the stated ecotype of each individual are the results we get:
+```{r}
+big_haps4 %>%
+  group_by(POS, ecotype) %>%
+  summarise(freq_of_S_allele = sum(alle2 == "S")) %>%
+  spread(key = ecotype, value = freq_of_S_allele)
+```
+
+And, we can see where that is going!  Clearly the 7 copies in the Fall populations are
+due to heterozygotes, and that is also probably the case a couple springers.
+
+Let's do this again with the relative frequencies.
+```{r}
+big_haps4 %>%
+  group_by(POS, ecotype) %>%
+  summarise(freq_of_S_allele = mean(alle2 == "S")) %>%
+  spread(key = ecotype, value = freq_of_S_allele)
+```
+
+
+So, let's break it out by haplotype group:
+```{r}
+big_haps4 %>%
+  group_by(POS, haplo_group) %>%
+  summarise(freq_of_S_allele = sum(alle2 == "S")) %>%
+  spread(key = haplo_group, value = freq_of_S_allele)
+```
+
+OK, we need to know what the total number of haplotypes is in there too:
+```{r}
+big_haps4 %>%
+  group_by(POS, haplo_group) %>%
+  summarise(freq_of_S_allele = sum(alle2 == "S"),
+            freq_of_F_allele = sum(alle2 != "S")) 
+```
+
+That shows us what we expect, but it is difficult to read.  But it shows us that only two of the candidates
+have any diffs, and that one of them is perfect, whilst the other is missing by 1.  Let's do it in terms of
+fractions:
+```{r}
+big_haps4 %>%
+  group_by(POS, haplo_group) %>%
+  summarise(freq_of_S_allele = mean(alle2 == "S")) %>%
+  spread(key = haplo_group, value = freq_of_S_allele)
+```
+
+## Codons in coho salmon
+
+So, what remains now is to verify that the spring-associated alleles are the same
+as in coho.  We use our aligned coho genome for that.
+```{sh}
+# pull out the bits from chinook:
+samtools faidx genome/Otsh_v1.0_genomic.fna NC_037124.1:12265344-12265346
+#>NC_037124.1:12265344-12265346
+#CTT
+
+
+# That corresponds to the codon AAG.  If the spring variant were in the
+# reference genome then we'd get CTC.
+
+# pull out the same bit from our coho alignment
+samtools faidx stored_results/001/NC_037124.1_coho.fna.gz  NC_037124.1:12265344-12265346
+#>NC_037124.1:12265344-12265346
+#CTC
+
+
+# there you have it!
+
+# and now we do the same for the other non-synonymous position
+samtools faidx genome/Otsh_v1.0_genomic.fna NC_037124.1:12265889-12265891
+#>NC_037124.1:12265889-12265891
+#GGA
+
+# that, corresponds to the codon TCC.  So, the spring-associated
+# form will be GGG.
+samtools faidx stored_results/001/NC_037124.1_coho.fna.gz  NC_037124.1:12265889-12265891
+#>NC_037124.1:12265889-12265891
+#GGG
+
+# Boom!
+```
+
+Now, let's also check a final time on REF and ALT in the original VCF, to make sure that
+it all accords as it is supposed to here.
+```{sh}
+# Check the first position
+bcftools view data/greb1l-ish-region.vcf.gz NC_037124.1:12265346 | awk '/^##/ {next} {print $1, $2, $3, $4, $5}' 
+#CHROM POS ID REF ALT
+#NC_037124.1 12265346 . T C
+
+# Yep, that is correct
+
+# and the second
+bcftools view data/greb1l-ish-region.vcf.gz NC_037124.1:12265891 | awk '/^##/ {next} {print $1, $2, $3, $4, $5}' 
+#CHROM POS ID REF ALT
+#NC_037124.1 12265891 . A G
+
+# also correct
+
+```
+
+
+OK! This all forms the basis for Table S1: "Two near-perfectly associated, non-synonymous variants in the GREB1L gene."
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+
+
+
+

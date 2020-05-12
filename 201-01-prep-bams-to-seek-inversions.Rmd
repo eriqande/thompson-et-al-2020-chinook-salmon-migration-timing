@@ -1,0 +1,222 @@
+---
+title: "Prepare Bams to search for inversions around the RoSA region"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+
+# Introduction
+
+Here, we use our short read data to search for any evidence that there might
+an inversion in or around the RoSA region.  Finding inversions and their breakpoints
+using paired-end whole genome sequencing data is not always reliably done, depending
+on the type of inversion [@shaoNpInvAccurateDetection2018]. Inversions formed by non-homologous
+end joining (NHEJ) can, in theory, be reliably detected using short read data; however
+inversions formed by non-allelic homologous recombination (NAHR) are quite difficult
+to detect from short read data due to the fact that the regions flanking the inversion
+are filled with repetitive motifs in which assembly and alignment are both difficult,
+so that there may not be a consistent signal of improperly paired or split reads
+over inversion boundaries.
+
+Ultimately, we may not accurately know the structure of this region of the genome until
+some sort of long read sequencing (such as Oxford Nanopore) has been completed.
+Nonetheless, we are in a situation in which we have a very strong prior belief about
+where an inversion might exist, and we have read data from two different groups---those
+with $E$-lineage haplotypes and those with $L$-lineage haplotypes---whose chromosomes would have
+different inversion status, if there is, in fact, an inversion associated with migration
+timing.  So, we will use our short read data to see what we can find.
+
+With mapped short read data, the two primary signals available to identify
+the presence of an inversion are:
+
+1. _Aberrant paired-end read mapping_.  If a DNA fragment used as a
+template for sequencing originates from a section of chromosome that is structured
+as is the reference genome used for mapping, then either read 1 will map to the
+forward strand and read 2 to the reverse strand of the reference, or read 2 will map
+to the forward strand and read one will map to the reverse strand of the reference.
+On the other hand, if a template spans an inversion breakpoint then the reads will
+map either both to the forward or both to the reverse strand of the reference. Additionally,
+the insert length of the mapped reads will be longer than typical (on the order of the
+length of the inversion).
+2. _Split read alignment_. If an actual sequencing read is from a segment of DNA that
+spans an inversion (relative to the reference genome) then two different parts of the
+read will map to different parts of the chromosome.  These are known as split reads.
+When the `-M` option is not given to `bwa mem`, then one alignment of such reads is
+considered primary and the rest are considered supplementary.  
+
+So, we are going to work our way through our BAM files to identify these.
+This is all getting evaluated on a cluster.  The code is here, but
+does not get run when the RMarkdown document is rendered.  
+
+# Get the region of interest
+
+We are going to extract from each individual, all the reads that map
+within the range `NC_037124.1:11300000-13300000`.  That is the 2 Mb
+within which the RoSA lies.  Any mapping relevant to a possible
+inversion within or flanking the RoSA will be within that
+span.  
+
+```sh
+mkdir -p intermediates/201
+
+# make a TAB delimited text file with file prefixes and run types in it:
+awk -F"," '
+  BEGIN{printf("index\tfile_prefix\trun_type\n");}
+  NR>1 {
+    rt = tolower($NF); 
+    sub(/ +/, "_", rt);
+    printf("%d\t%s\t%s\n", ++n, $1, rt);
+  }
+' data/wgs-chinook-samples.csv > intermediates/201/varlines.tsv
+
+# make directories to put results into:
+mkdir -p intermediates/201/single_bams/{fall,spring,winter,late_fall}
+
+# activate our conda environment that has samtools and bedtools in it
+conda activate bioinf
+
+# cycle over the 160 individuals
+for i in {1..160}; do
+  # assign variables based on task ID
+  eval $(./script/line-assign.sh $i ./intermediates/201/varlines.tsv)
+
+  # now, pull out that region
+  samtools view -b chinook_WGS_processed/$file_prefix.rmdup.bam NC_037124.1:11300000-13300000 > intermediates/201/single_bams/$run_type/$file_prefix.bam
+  echo "done with $i"
+done
+
+# now, merge the bams from the four different run types
+mkdir -p intermediates/201/merged_bams
+for dir in intermediates/201/single_bams/{fall,spring,winter,late_fall}; do 
+  echo $dir
+  dbase=$(basename $dir)
+  samtools merge -f intermediates/201/merged_bams/$dbase.2Mb.bam $dir/*.bam
+  samtools index intermediates/201/merged_bams/$dbase.2Mb.bam
+  echo "done with $dir"
+done
+```
+Here is what we ended up with after that:
+```sh
+-rw-rw-r-- 1 eanderson eanderson 119M Apr 12 14:54 intermediates/201/merged_bams/fall.2Mb.bam
+-rw-rw-r-- 1 eanderson eanderson  31M Apr 12 14:54 intermediates/201/merged_bams/late_fall.2Mb.bam
+-rw-rw-r-- 1 eanderson eanderson 101M Apr 12 14:54 intermediates/201/merged_bams/spring.2Mb.bam
+-rw-rw-r-- 1 eanderson eanderson  36M Apr 12 14:54 intermediates/201/merged_bams/winter.2Mb.bam
+```
+
+
+## Check the distribution of coverage across those 2 Mb
+
+Let's look at this for spring and fall.
+Here are the coverages of that region (requires samtools 1.10):
+```sh
+(bioinf) [node01: merged_bams]--% samtools coverage -r NC_037124.1:11300000-13300000  fall.2Mb.bam
+#rname	startpos	endpos	numreads	covbases	coverage	meandepth	meanbaseq	meanmapq
+NC_037124.1	11300000	13300000	1485061	1935332	96.7666	102.771	37.7	51
+(bioinf) [node01: merged_bams]--% samtools coverage -r NC_037124.1:11300000-13300000  spring.2Mb.bam
+#rname	startpos	endpos	numreads	covbases	coverage	meandepth	meanbaseq	meanmapq
+NC_037124.1	11300000	13300000	1265063	1930690	96.5345	87.4861	37.8	50.8
+```
+So, we have >80 reads, on average, per site that is covered for either
+of the run types.  That should give us something to work with.
+
+# Calculating depths of different kinds of reads and read pairs
+
+Since we have reasonably good read depths, I first want to just go
+nucleotide-by-nucleotide in the region and compare fall to spring in terms
+of the fraction of total reads covering that base that are of different
+types (namely split/supplementary or aberrant-pairing).  If there were no
+differences in the genome structure between springs and falls, we would
+expect these proportions to be pretty much the same for the two run types.
+
+So, for each run_type we are going to want to count up:
+
+- All of the reads covering each base pair.  When doing so we will
+disregard unmapped, qc-failed, and secondary reads, but this step
+does not toss out "supplementary" reads (i.e. 0x800). PCR dupes have
+already been removed, though...
+- Reads that are FF or RR (aberrantly matching), so that corresponds to
+(0x10 & 0x20) or (!0x10 & !0x20).  
+- Reads whose mates are completely unmapped.  That would be 0x8.  This should
+be completely distinct from the previous.
+- Reads that are "supplementary" (i.e. 0x800 = 2048 = chimeric).  These might
+also have some of the previous bits set.  
+
+So, let's go ahead and do this:
+```sh
+module load bio/samtools
+
+dir=intermediates/201/merged_bams
+for i in fall late_fall winter spring; do
+
+  # get the RR reads: 0x10 & 0x20 = 16 + 32 = 48
+  samtools view -b -f 48 $dir/$i.2Mb.bam > $dir/RR-$i.bam &&
+  samtools index $dir/RR-$i.bam && 
+  echo RR-$i.bam
+  
+  # to get the forward-forward reads we first get everything in which
+  # 0x10 is *not* set, and then further filter that set for 0x20 being
+  # not set:
+  samtools view -u -F 0x10 $dir/$i.2Mb.bam | \
+  samtools view -b -F 0x20 > $dir/FF-$i.bam &&
+  samtools index $dir/FF-$i.bam &&
+  echo FF-$i.bam
+  
+  # now merge those together into one "aberrantly-paired file"
+  samtools merge -f $dir/$i.aberrant.bam $dir/RR-$i.bam $dir/FF-$i.bam &&
+  rm $dir/RR-$i.bam $dir/FF-$i.bam &&
+  samtools index $dir/$i.aberrant.bam &&
+  echo "merged aberrant $i"
+  
+  # now get the ones with unmapped mates
+  samtools view -b -f 0x8 $dir/$i.2Mb.bam > $dir/$i.mates_unmapped.bam &&
+  samtools index $dir/$i.mates_unmapped.bam &&
+  echo "got unmapped mates $i"
+  
+  # finally grab the supplementary/chimeric ones (i.e. "split reads")
+  samtools view -b -f 0x800 $dir/$i.2Mb.bam > $dir/$i.split_reads.bam &&
+  samtools index $dir/$i.split_reads.bam &&
+  echo "got split reads $i"
+done
+```
+
+After all of that is done, we can count up the depth of reads of each
+type at each nucleotide in those 2 Mb.  
+```sh
+mkdir -p outputs/201
+curdir=$PWD
+cd intermediates/201/merged_bams
+samtools depth -a -H -r NC_037124.1:11300000-13300000 *.bam | gzip -c > $curdir/outputs/201/read-depths-by-base-pair-and-pair-type.tsv.gz
+cd $curdir
+```
+
+Then we write `read-depths-by-base-pair-and-pair-type.tsv.gz` into
+`stored_results/201/read-depths-by-base-pair-and-pair-type.tsv.gz`.
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+
+# Citations
+

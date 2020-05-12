@@ -1,0 +1,660 @@
+---
+title: "Read Depths and Duplications"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+
+Anaylsis of the duplications between GREB1L and ROCK1 that are
+associated with run timing.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# Packages and paths 
+```{r}
+library(tidyverse)
+library(plotly)
+
+
+dir.create("outputs/008", recursive = TRUE, showWarnings = FALSE)
+
+```
+
+# Per-base-pair depth in the 5.16 Mb region (On the cluster, mostly)
+
+First, we will want to report on the average read depth in this region of each
+individual.  Some individuals with low read depth will be removed.  We had originally
+computed this in terms of coverage in 5000 windows of length 10 Kb in this region. But
+a reviewer wondered why we didn't just compute average read depth of each individual
+at a set of markers that were within 0.5 and 2 times the average per-base read depth
+across all individuals.  Fair question.  We will redo our calculations as suggested by the
+reviewer.
+
+## Calculate total read depth at each base pair in the region
+
+For this, we merge all the bams from different individuals into a single one
+and then use `samtools depth`.  This is done on the cluster (not evaluated
+when rmarkdown document is rendered.)
+
+First, break out that 5.16 Mb region from every bam
+```sh
+mkdir -p intermediates/008/small_bams
+
+srun -c 5 --pty /bin/bash
+
+module load bio/samtools
+for i in chinook_WGS_processed/*.bam; do
+  j=$(basename $i);
+  samtools view -b -@ 4 $i NC_037124.1:9660000-14825000 >  intermediates/008/small_bams/$j
+  samtools index intermediates/008/small_bams/$j
+  echo $i
+done
+```
+Then merge all those together.
+```sh
+samtools merge -f intermediates/008/all-160-merged.bam intermediates/008/small_bams/*.bam
+samtools index intermediates/008/all-160-merged.bam
+```
+Then we find the depth at each position in that file
+```sh
+samtools depth -a -r NC_037124.1:9660000-14825000 intermediates/008/all-160-merged.bam > intermediates/008/total-depth.tsv
+```
+
+### Analyze that in R
+
+We want to make histograms and things.
+```{r, eval=FALSE}
+library(tidyverse)
+
+tot_depths <- read_tsv("intermediates/008/total-depth.tsv", col_names = c("chrom", "pos", "depth"))
+
+mean_depth <- mean(tot_depths$depth)
+median_depth <- median(tot_depths$depth)
+
+# results:
+#> mean_depth
+#[1] 249.4329
+#> median_depth
+#[1] 238
+
+rd_histo <- ggplot(tot_depths, aes(x = depth)) +
+  geom_histogram(binwidth = 10) +
+  xlim(0, 2000) +
+  geom_vline(xintercept = c(0.5, 1, 2) * mean_depth, colour = "red") +
+  geom_vline(xintercept = c(0.5, 1, 2)  * median_depth, colour = "blue")
+
+# write that ggplot out to stored_results to put it in a notebook
+write_rds(rd_histo, path = "stored_results/008/rd_histo.rds", compress = "xz")
+```
+
+Here we will plot that histogram locally:
+```{r}
+rd_histo <- read_rds("stored_results/008/rd_histo.rds")
+rd_histo
+```
+The blue lines show the median (and the 0.5 and 2.0 cutoffs), and the red lines
+show the same for the mean.
+
+That shows a fairly small difference between the mean and the median.  But the median makes more sense
+to me in this context for the "background" level of depth.  So, we will use that to define our sites
+that we "keep": those between 0.5 and twice the "background."
+```{r, eval=FALSE}
+keep_sites <- tot_depths %>%
+  filter(depth > 0.5 * median_depth & depth < 2 * median_depth)
+```
+That is 4,668,074 sites retained out of the total 5,165,000.
+
+```r
+cat(keep_sites$pos, sep="\n", file = "intermediates/008/keeper_sites.txt")
+```
+
+## Now get the mean read depth of each sample over those "kept" sites
+
+We will use samtools depth to get those values.
+We are going to do that in a job array.
+But we will pipe the output to something that
+will just keep the keeper sites, in awk, and compute
+the mean depth at them.
+```sh
+# prepare
+mkdir -p intermediates/008/{slurm_out,slurm_err,sb_depths}
+
+ls -l intermediates/008/small_bams/*.bam | awk 'BEGIN {printf("index\tfile\n");} {printf("%d\t%s\n", ++idx, $NF);}' > intermediates/008/file-list.tsv
+
+sbatch ./script/008-read-depth-array.sh
+
+# that is very quick.  And when we are done with
+# it we can catenate the results into stored results
+cat intermediates/008/sb_depths/0*.txt > stored_results/008/per-base-mean-depth-by-reviewer-recommendation.txt
+
+```
+
+## Compare results with the "old way" we did it
+
+We had previously used a different criterion for filtering sites. We want to
+compare those results to what we get using the reviewer-recommended method.
+Our previous results are in `stored_results/008/old-way-average-read-depths-near-greb1.tsv`.
+
+```{r}
+new_depths <- read_tsv("stored_results/008/per-base-mean-depth-by-reviewer-recommendation.txt",
+                       col_names = c("vcf_name", "num_bp_in_keepers", "tot_keepers", "mean_read_depth")) %>%
+  mutate(vcf_name = str_replace(vcf_name, "\\.rmdup.*$", ""))
+old_depths <- read_tsv("stored_results/008/old-way-average-read-depths-near-greb1.tsv")
+```
+
+Make a plot of the distribution of new depth values:
+```{r}
+ggplot(new_depths, aes(x = mean_read_depth)) + 
+  geom_histogram()
+```
+
+So, we still have the same 14 problematic individuals with read depth < 0.5X.  Look at the first
+20 here:
+```{r}
+nd_arr <- new_depths %>%
+  select(vcf_name, mean_read_depth) %>%
+  arrange(mean_read_depth) %>%
+  slice(1:20)
+
+nd_arr
+```
+
+While we are at it, we will write those 14 names to a file
+to make sure that we can remove them in later analyses
+if need be.  We will put these in stored results.
+```{r}
+nd_arr %>%
+  filter(mean_read_depth < 0.5) %>%
+  pull(vcf_name) %>%
+  cat(., sep = "\n", file = "stored_results/008/14-low-read-depth-drop-indivs.txt")
+```
+
+Let's also print those out with some meta data:
+```{r}
+read_csv("data/wgs-chinook-samples.csv") %>%
+  left_join(nd_arr %>% filter(mean_read_depth < 0.5), .) %>%
+  select(-(ID_Berk:BOX_POSITION))
+```
+
+Finally, compare the values between our old way of doing it (filtering
+out windows of excessive read depth) and the
+preferable approach suggested by the referee:
+```{r}
+new_depths %>%
+  left_join(old_depths, by = "vcf_name") %>%
+  ggplot(aes(x = old_way_read_depth, y = mean_read_depth)) + 
+  geom_point(shape = 21, colour = "blue") +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+```
+
+So, not huge differences, but the referee's approach is clearly preferable.
+
+
+# Getting Read Depths
+
+Looking at the haplo-raster of read depth (from 006) it looks to be quite clear that the fall run 
+has a duplicated region just to the right of the right-most Tasha SNP.  Here, we visually
+demarcate that region, and then we compare the expected number of reads in that region (using just
+the individuals that look non-duplicated) to the observed number, amongst the fish that
+look to have the duplication to see if we can see how many duplicates there are.
+
+# Getting indiviual-specific read depths across the whole 5.16 Mb region
+
+We want the total number of reads spanning that whole region for each individual.
+This gives us a measure of expecte number of reads for each individual over a large
+swath of genome.
+
+This is quick with bedtools, but requires all the BAMs (which are not included in this repo).
+But the code we used is included here for those who have generated the BAMs.
+```sh
+# we have a bed file to grab that region.  cat it to see it has one line in it.
+cat dupie-region/5.16Mb.bed
+#NC_037124.1	9660000	14825000	5.16Mb_chunk
+
+# use bedtools multicov
+bedtools multicov -bams nmfs-chinook-NC_037124.1-bams/*.bam -bed dupie-region/5.16Mb.bed > dupie-region/5.16Mb.multicov
+
+# record the names of the fish so we have that:
+ls -l nmfs-chinook-NC_037124.1-bams/*.bam | awk '{n=$NF; sub(/^.*NC_037124.1-/, "", n); sub(/\.rmdup.bam/,"", n); print n}' > dupie-region/bam-fish-names.txt 
+```
+
+That produced two files that we have included in the repo here in directory
+`stored_results`:
+```
+./stored_results/008/5.16Mb.multicov
+./stored_results/008/bam-fish-names.txt
+```
+## Getting per-bp read depths for each individual across 30K base pairs where the duplications are prevalent.
+
+This is actually quite computationally intensive.  The following code documents
+how I ended up doing it in a job array.
+```sh 
+echo NC_037124.1 | awk '{for(b=12300000;b<=12330000;b++) printf("%s\t%d\t%d\t%s:%d\n", $1, b, b, $1, b)}' > dupie-region/every-bp.bed
+
+# then set it off to estimate how much time it will take.
+bedtools multicov -bams nmfs-chinook-NC_037124.1-bams/*.bam -bed dupie-region/every-bp.bed > dupie-region/every-bp.multicov
+```
+That got through about 10,000 bp in two hours.  I'm sure there is a much faster way of doing it, but at this
+point I just want to finish it up.  So, here is what we do:
+
+1. Put the bams on flash scratch
+2. Run a job array with each job doing 1,000 bp (should take about 12 minutes.  So, we will give each job
+an hour and that should be plenty.)
+
+We first make 21 files numbered 001 to 021 that have 1000 bp segments (apart from
+the first two).
+```sh
+# in /u/home/e/eriq/nobackup-kruegg/osu-chinook-nobackup/dupie-region
+mv every-bp.multicov 001-every-bp.multicov 
+awk '$2 <= 12310665' every-bp.bed > 001-every-bp.bed
+awk '$2 > 12310665 && $2 <= 12311000' every-bp.bed > 002-every-bp.bed
+
+# now, from here we just want to put out a different file for every 1000 from 12311001 to 12330000.
+# that sounds like a job for awk.
+echo NC_037124.1 | awk '
+   BEGIN {F=3;} 
+   {for(b=12311001;b<=12330000;b++) {
+      ++n; 
+      file=sprintf("%03d-every-bp.bed", F); 
+      printf("%s\t%d\t%d\t%s:%d\n", $1, b, b, $1, b) > file; 
+      if(n % 1000 == 0) {
+         close(file); F++;
+      }
+    }
+    }'
+``` 
+That creates a bunch of files like: `004-every-bp.bed`.
+
+Then, make a job array script to crunch those all out:
+```sh
+#!/bin/bash                                                                                             
+#$ -cwd                                                                                                 
+#$ -V                                                                                                   
+#$ -N every-bp                                                                                          
+#$ -o every-bp-$TASK_ID.log                                                                             
+#$ -e every-bp-$TASK_ID.error                                                                           
+#$ -l h_data=4G,time=1:00:00                                                                            
+#$ -M eric.anderson@noaa.gov                                                                            
+#$ -t 1-21:1  # 2-21                                                                                     
+#$ -m a                                                                                                 
+
+
+
+source /u/local/Modules/default/init/modules.sh
+module load bedtools
+
+
+INBED=$(printf "%03d-every-bp.bed" $SGE_TASK_ID)
+OUTF=${INBED/.bed/.multicov}
+
+bedtools multicov -bams /u/flashscratch/e/eriq/full-wgs-chinook-data/nmfs-chinook-NC_037124.1-bams/*.bam -bed $INBED > $OUTF
+
+```
+
+Launch with:
+```sh
+qsub every-bp-job-array.sh
+```
+
+When it was done we did:
+```sh
+cat 0*.multicov > NC_037124.1-12300000-12330000.multicov
+
+# check how many lines
+wc NC_037124.1-12300000-12330000.multicov 
+#   30001  4920164 11155429 NC_037124.1-12300000-12330000.multicov
+```
+And, we've put the result into this repository, in `./stored_results/008/NC_037124.1-12300000-12330000.multicov.gz`.
+
+
+# Computing predicted and observed reads at an aggregate level
+
+First, read the results in and wrangle into tidy format and join with meta data
+```{r}
+meta <- read_csv("data/wgs-chinook-samples.csv") %>%
+  mutate(pop = str_replace_all(Population, "Spring|Late Fall|Fall", "") %>%
+           str_replace_all(., "Hatchery", "H." ) %>%
+           str_replace_all(., "Creek", "Ck.") %>%
+           str_replace_all(., "River", "R."))
+bammy <- read_lines("stored_results/008/bam-fish-names.txt")
+
+mb516 <- read_tsv("stored_results/008/5.16Mb.multicov", col_names = FALSE) %>%
+  setNames(c("chrom", "start", "stop", "int_name", bammy)) %>%
+  gather(., key = "vcf_name", value = "reads", -(chrom:int_name)) %>%
+  left_join(meta, by = "vcf_name") %>%
+  mutate(group = ifelse(run_type == "Spring", "Spring", "FLFW"))
+
+bpcov <- read_tsv("stored_results/008/NC_037124.1-12300000-12330000.multicov.gz", col_names = FALSE) %>%
+  setNames(c("chrom", "start", "stop", "int_name", bammy)) %>%
+  gather(., key = "vcf_name", value = "reads", -(chrom:int_name)) %>%
+  left_join(meta, by = "vcf_name") %>%
+  mutate(group = ifelse(run_type == "Spring", "Spring", "FLFW"))
+```
+
+Now, we can start compiling some things.
+```{r}
+# first get total number of reads in the 5.16 Mb region for both groups
+tmp <- mb516 %>%
+  group_by(group) %>%
+  summarise(tot_read = sum(reads))
+Tflfw <- tmp$tot_read[tmp$group == "FLFW"]
+Tspring <- tmp$tot_read[tmp$group == "Spring"]
+
+# then get the number of reads for each base pair for each of them
+pred_depths <- bpcov %>%
+  group_by(group, start) %>%
+  summarise(Xb = sum(reads)) %>%
+  rename(pos = start) %>%
+  spread(key = group, value = Xb) %>%
+  mutate(pred_FLFW = Spring * Tflfw / Tspring) %>%
+  mutate(obs_pred_ratio = FLFW / pred_FLFW)
+
+```
+
+Now, let's make an initial picture of that to see what it looks like.
+```{r}
+g <- ggplot(pred_depths, aes(x = pos, y = obs_pred_ratio)) +
+  geom_point(size = 0.1) +
+  geom_hline(yintercept = c(1, 2), linetype = "dashed", colour = "red")
+
+# ggplotly(g)
+g
+```
+
+By fiddling with the above figure using ggplotly, it looks like some intervals with
+a 2:1 duplication reside amongst other intervals that are 1:1 or quite ridiculously
+high.
+```
+NC_037124.1	12302800	12310950	Mostly_1
+NC_037124.1	12311027	12314175	Mostly_2
+NC_037124.1	12314176	12316545	Above_2
+NC_037124.1	12317306	12317786	Wacky_high
+NC_037124.1	12317958	12318837	Near_1_again
+NC_037124.1	12319007	12321906	Around_2_again
+NC_037124.1	12323456	12324276	Back_to_1_short
+NC_037124.1	12328219	12330000	Back_to_1_right
+```
+
+## Assessing repeat masked status
+
+Before I get onto that, though, I want to color each position by whether it is soft-masked (lowercase) in the
+Chinook reference genome, or not. We get the appropriate piece of the fasta like this:
+```sh
+samtools faidx genome/Otsh_v1.0_genomic.fna NC_037124.1:12300000-12330000 > inputs/NC_037124.1-12300000-12330000.fna
+```
+And I put the result into this repo in: `./stored_results/008/NC_037124.1-12300000-12330000.fna.gz`.
+
+Now, slurp that sequence out and blow it up into a tibble:
+```{r}
+fasta_lines <- read_lines("stored_results/008/NC_037124.1-12300000-12330000.fna.gz")[-1]
+fasta_vec <- paste(fasta_lines, collapse = "") %>%
+  strsplit(., "") %>%
+  `[[`(1)
+bases <- tibble(pos = seq(from = 12300000, by = 1, length = length(fasta_vec)),
+                ref = fasta_vec) %>%
+  mutate(repeat_status = ifelse(str_detect(ref, "[a-z]"), "soft-masked", "not masked"))
+```
+
+And join it to pred depths and replot, along with the domains we defined above.
+```{r}
+pred_depths2 <- pred_depths %>%
+  left_join(bases, by = "pos")
+
+# get the domains that we defined above, too
+domains <- read_tsv("stored_results/008/rough-dupie-regions.bed",
+                    col_names = c("chrom", "start", "stop", "name"))
+
+odds <- domains %>% slice(seq(1, n(), by = 2))
+evens <- domains %>% slice(seq(2, n(), by = 2))
+
+
+# Plot this, but drop points at which the spring run have zero reads observed
+g2 <- ggplot() +
+  geom_rect(data = odds, mapping = aes(xmin = start, xmax = stop), ymin = -Inf, ymax = Inf, fill = "orange", colour = NA, alpha = 0.2) +
+  geom_rect(data = evens, mapping = aes(xmin = start, xmax = stop), ymin = -Inf, ymax = Inf, fill = "blue", colour = NA, alpha = 0.2) +
+  geom_point(data = pred_depths2 %>% filter(Spring > 0), mapping = aes(x = pos, y = obs_pred_ratio, colour = repeat_status), size = 0.1) +
+  geom_hline(yintercept = c(1, 2), linetype = "dashed", colour = "red") +
+  ylim(0, 5)
+
+g2
+```
+
+## Make a final figure
+
+Before we continue, let us make a more production-ready figure that just shows
+the regions that we will call "Doubles" and those that we will call "Singles".  We
+will use those later to look at the individual depths.  
+```{r}
+Singles <- domains %>%
+  filter(str_detect(name, "1"))
+Doubles <- domains %>%
+  filter(str_detect(name, "2"))
+
+
+g100 <- ggplot() +
+  geom_rect(data = Doubles, mapping = aes(xmin = start/1e6, xmax = stop/1e6), ymin = -Inf, ymax = Inf, fill = "orange", colour = NA, alpha = 0.25) +
+  geom_rect(data = Singles, mapping = aes(xmin = start/1e6, xmax = stop/1e6), ymin = -Inf, ymax = Inf, fill = "blue", colour = NA, alpha = 0.25) +
+  geom_point(data = pred_depths2 %>% filter(Spring > 0), mapping = aes(x = pos/1e6, y = obs_pred_ratio, colour = repeat_status), size = 0.1) +
+  geom_hline(yintercept = c(1, 2), linetype = "dashed", colour = "red") +
+  ylim(0, 5) +
+  ylab("Ratio of Observed to Predicted Read Depth") +
+  xlab("Position on Chromosome 28 (Mb)") + 
+  guides(colour = guide_legend(
+    title = "Repeat Status",
+    override.aes = list(size = 2)
+  )) +
+  theme_bw()
+
+ggsave(g100, filename = "outputs/008/aggregate-read-depth-lines.pdf", width = 7, height = 5)
+
+g100
+  
+```
+
+# Computing observed vs predicted reads on an individual level
+
+We take our rough-dupie regions and get numbers of reads overlapping those regions. 
+```sh
+bedtools multicov -bams /Volumes/KanaloaEXTRA/chinook_WGS_processed_large_contigs/*.bam  -bed rough-dupie-regions.bed > rough-dupie-regions.multicov
+# that is really quick.
+```
+The output is stored in the repo in: `./stored_results/008/rough-dupie-regions.multicov`
+
+We use that output to look at the number of reads on a per-individual basis.
+```{r}
+# get it all into a data frame
+rdrm <- read_tsv("stored_results/008/rough-dupie-regions.multicov", col_names = FALSE) %>%
+  setNames(c("chrom", "start", "stop", "int_name", bammy)) %>%
+  gather(., key = "vcf_name", value = "reads", -(chrom:int_name)) %>%
+  left_join(meta, by = "vcf_name") %>%
+  mutate(group = ifelse(run_type == "Spring", "Spring", "FLFW")) %>%
+  mutate(Ecotype = str_c(run_type, " Run")) %>%
+  mutate(Domain = factor(int_name, levels = domains$name))
+```
+
+
+Now, we will predict each individual's read depth as a function of the
+spring run read depth.
+First get the total spring read depths in each domain and join that
+to the data frame domain-specific reads with spring. And also join the
+total number of reads in the 5.16 Mb region at each individual on there,
+and then compute the simple predicted values.
+```{r}
+sorty <- rdrm %>%
+  arrange(Domain, Ecotype, reads) %>% 
+  group_by(Domain) %>%
+  mutate(Index = 1:n())
+
+dsrws <- sorty %>%
+  filter(run_type == "Spring") %>%
+  group_by(Domain) %>%
+  summarise(tot_spring_reads_in_domain = sum(reads)) %>%
+  ungroup() %>%
+  left_join(sorty, ., by = "Domain") %>%
+  left_join(., mb516 %>% select(vcf_name, reads) %>% rename(tot_reads_516 = reads), by = "vcf_name") %>%
+  mutate(pred_domain_reads = tot_reads_516 * tot_spring_reads_in_domain / Tspring)
+```  
+
+```{r}
+# get our color scheme
+source("R/define_fcolors_all_sf.R")
+
+# now plot it in a big plot, faceted by domain, and coloured by Ecotype
+g <- ggplot(dsrws, aes(x = pred_domain_reads, y = reads, fill = Ecotype)) +
+  geom_point(shape = 21, stroke = 0.1) +
+  scale_fill_manual(values = fcolors_all_sf) +
+  facet_wrap(~ Domain, ncol = 2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dotted") +
+  geom_abline(intercept = 0, slope = 2, linetype = "dashed")
+
+g
+```
+
+That is quite clear and interesting.  And it would be interesting to follow up on the 
+fish that have higher or lower read depth than expected here.  Of interest in the region
+is the fact that some of the fish appear to be heterozygous in that duplicated region (in terms
+of the alleles they carry), but then some of the fish that are heterozygous across most of that
+region are homozygous for the spring run allele (this is especially the case in the Feather River
+spring run).  Interesting.
+
+
+## Check out the allelic variation in there
+
+Looking at some of the raster plots, it appears that none of the Feather River Spring
+are homozygous for the alleles associated with the duplicated ("fall") form of the 
+haplotype, but some are heterozygous.  So, let's pull those haplotypes out
+and filter down to just the duplicated region:
+```{r}
+dr_bh <- read_rds(path = "outputs/004/big_haps2.rds") %>%
+  filter(POS > 12311027 & POS < 12321906)
+```
+
+Look at the distribution of the number of S vs F alleles
+on each haplotype, according to their ecotype.
+```{r}
+NumS_alle <- dr_bh %>%
+  group_by(Indiv, haplo_name, ecotype) %>%
+  summarise(numS_alleles = sum(alle2 == "S"),
+            fracS_alleles = numS_alleles / n())
+```
+And now make a histogram of that:
+```{r}
+ggplot(NumS_alle, aes(x = fracS_alleles, fill = ecotype)) +
+  geom_histogram(bins = 25, colour = "black", size = 0.1) + 
+  facet_wrap(~ ecotype) +
+  expand_limits(x = 0) +
+  scale_fill_manual(values = fcolors_all_sf) +
+  theme_bw()
+```
+
+OK, that shows there are clearly two different classes.  And it appears that
+there is some uncertainty, probably in heterozygous individuals, so, let's 
+see where these values fall out for entire individuals, not just the haplotypes
+within them.
+```{r}
+NumS_alle_by_indiv <- NumS_alle %>%
+  group_by(Indiv, ecotype) %>%
+  summarise(numS_alleles = sum(numS_alleles),
+            fracS_alleles = mean(fracS_alleles))
+
+ggplot(NumS_alle_by_indiv, aes(x = fracS_alleles, fill = ecotype)) +
+  geom_histogram(bins = 25, colour = "black", size = 0.1) + 
+  facet_wrap(~ ecotype) +
+  expand_limits(x = 0) +
+  scale_fill_manual(values = fcolors_all_sf) +
+  theme_bw()
+```
+
+OK, so, just from the allelic variation present in this region we can make a pretty
+good guess of which individuals are likely heterozygous for the duplications.  So,
+let's name them:
+```{r}
+likely_hets <- NumS_alle_by_indiv %>%
+  filter(fracS_alleles > 0.25 & fracS_alleles < 0.87)
+```
+We will denote those individuals on the upcoming plot in which we divide the domains
+up simply as duplicated and not-duplicated.
+```{r}
+rdrm_new_domain <- rdrm %>%
+  ungroup() %>%
+  mutate(Domain = case_when(
+    str_detect(Domain, "2") ~ "Likely duplicated",
+    str_detect(Domain, "1") ~ "Non-duplicated",
+    TRUE ~ as.character(NA)
+  )) %>%
+  filter(!is.na(Domain)) %>%
+  mutate(Indiv = paste0(str_replace_all(Population, " ", "_"), "-", NMFS_DNA_ID)) %>%
+  group_by(Indiv, vcf_name, Population, run_type, Domain) %>%
+  summarise(reads = sum(reads))
+
+indy_pred_by_spring <- rdrm_new_domain %>%
+  filter(run_type == "Spring") %>%
+  group_by(Domain) %>%
+  summarise(tot_spring_reads_in_domain = sum(reads)) %>%
+  ungroup() %>%
+  left_join(rdrm_new_domain, ., by = "Domain") %>%
+  left_join(., mb516 %>% select(vcf_name, reads) %>% rename(tot_reads_516 = reads), by = "vcf_name") %>%
+  mutate(pred_domain_reads = tot_reads_516 * tot_spring_reads_in_domain / Tspring) %>%
+  mutate(Diplotype = case_when(
+    Indiv %in% likely_hets$Indiv ~ "Heterozygous",
+    TRUE ~ "Homozygous"
+  ))
+
+```
+
+Now, we should be ready to make a plot.
+```{r}
+ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type, colour = Diplotype)) +
+  geom_point(shape = 21, size = 2.0) +
+  facet_wrap(~ Domain) +
+  scale_fill_manual(values = fcolors_all_sf) +
+  theme_bw()
+```
+
+I don't really find the diplotype designation helpful there, other than
+to see that the one springer up with the blues is a het.  So, let's just not
+use that.
+```{r}
+g101 <- ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type)) +
+  geom_point(shape = 21, size = 2.5, stroke = 0.3) +
+  facet_wrap(~ Domain) +
+  scale_fill_manual(values = fcolors_all_sf) +
+  theme_bw() +
+  geom_abline(slope = c(1, 2), intercept = 0, linetype = "dashed") +
+  guides(fill = guide_legend(title = "Ecotype")) +
+  xlab("Read depths predicted from spring run read depths") +
+  ylab("Observed number of reads")
+
+ggsave(g101, filename = "outputs/008/dupie-read-depth-scatter.pdf", width = 8, height = 5)
+
+g101
+```
+
+That is the final figure for this notebook.
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+

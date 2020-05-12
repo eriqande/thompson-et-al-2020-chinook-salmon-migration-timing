@@ -1,0 +1,302 @@
+---
+title: "108-Ocean-early-haplotype-abundance-model-tableS10"
+author: "Neil Thompson"
+date: "Last Updated: `r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+```{r libraries}
+library(tidyverse)
+library(lubridate)
+```
+
+# Doing Analysis
+
+Using commercial fishery GSI dataset to estimate the number of copies of the early run haplotype in fish caught in the ocean but originating from the Klamath Basin.
+
+This provides an estimate of how abundant the early-run haplotype is within the Klamath Basin.
+
+To do this analysis we need a couple things.
+
+1. maturation probabilites for different age Chinook
+2. age-structure of returns sampled at hatcheries in the Klamath Basin
+3. Allele frequencies of the fish captured in commercial fishery.
+
+Values for 1 and 2 are taken from Hankin and Logan (2010) A PRELIMINARY ANALYSIS OF CHINOOK SALMON CODED-WIRE TAG RECOVERY DATA FROM IRON GATE, TRINITY RIVER AND COLE RIVERS HATCHERIES, BROOD YEARS 1978-2004.
+
+Table 4.13 has the age-structure of escapement at Trinity River hatchery for fingerling and yearling releases.
+
+Maturation probabilites are in Table 4.8.
+
+```{r calc-maturation-probabilties-for-each-age}
+t48_falldata <- tibble(age = rep(c(2,3,4),4), ecotype = rep("fall",12), pop=rep(rep(c("IGH","TRH"),each=3),2), rel_type = rep(c("fingerling","yearling"), each=6), mat_value = c(0.0315,.4808,.9327,.1029,.6447,.9362,.0087,.2385,.9348,.0363,.5629,.9407))
+
+t48_springdata <- tibble(age = rep(c(2,3,4),2), ecotype = rep("spring",6), pop=rep(c("TRH"),6), rel_type = rep(c("fingerling","yearling"), each=3), mat_value = c(0.0409,.5577,.9365,.0199,.3526,.9031))
+
+t148_data <- bind_rows(t48_falldata,t48_springdata)
+
+t148_data %>% group_by(age,pop,ecotype) %>%
+  summarise(mat_mean = mean(mat_value)) %>% arrange(pop, ecotype) %>%
+  group_by(age) %>%
+  summarise(mat_mean_overall = mean(mat_mean))
+```
+
+age-structure of TRH returns, data from table 4.13 in Hankin 2010
+```{r age-structure-data}
+age_structure <- tibble(age = rep(c(3,4,5),2), rel_type = rep(c("fingerling","yearling"),each=3), n_escape = c(7401,2691,93,19133,9465,140)) %>% 
+  group_by(rel_type) %>% 
+  mutate(n_tot = sum(n_escape),
+         pct_age = round(n_escape/n_tot,2)) %>%
+  group_by(age) %>%
+  summarise(mean_pct_age = mean(pct_age))
+
+```
+
+Definitions; [FW = freshwater, yo = years old]
+
+P3 = proportion of 3 yo in FW 
+P4 = proportion of 4 year olds in FW
+M3 = maturation rate for 3 yo
+M4 = maturation rate for 4 yo
+S3 = saltwater proportion of 3yo
+S4 = saltwater proportion of 4yo
+
+S3M3 = unscaled proportion of 3 yo in FW
+S4M4 = unscaled proportion of 4 yo in FW
+
+S3M3/(S3M3+S4M4) = P3 therefore S3M3 is proportional to P3 and S4M4 would be proportional to P4. Rearrange the proportionality and we get P3/M3 is proportional to S3, P4/M4 is proportional to S4
+
+```{r}
+P3 = 0.7
+M3 = 0.47
+P4 = 0.3
+M4 = 0.93
+
+S3_unnorm = P3/M3
+S4_unnorm = P4/M4
+
+S3_norm = round(S3_unnorm/sum(S3_unnorm,S4_unnorm),3) # rounded to 3 digits to keep things clean
+S4_norm = round(S4_unnorm/sum(S3_unnorm,S4_unnorm),3)
+```
+
+Now calculate the probability that either a 3 yo or 4 yo will enter freshwater this year.
+```{r}
+p_migrate_3yo = S3_norm*M3
+p_migrate_4yo = S4_norm*M4
+
+p_migrate = sum(p_migrate_3yo,p_migrate_4yo)
+```
+
+p_migrate = `r p_migrate`
+Expand the observed counts by the proportion of genotype  EE/EL/LL that has escaped to FW.
+
+Let: 
+q = fraction of fish with genotype EE/EL/LL that have escaped to freshwater by month
+0.45 = 1-p_migrate
+
+That leads to 
+Ngeno = ngeno/(1-0.45q)
+
+Ngeno = the number of genotype XX fish that would have been encountered given no fish left saltwater.
+
+```{r calc-q}
+rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
+
+estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
+
+estuary_data <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+  dplyr::select(-ID) %>%
+  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  dplyr::select(NMFS_DNA_ID, rosa, everything())
+
+q_df <- estuary_data %>% 
+  filter(!str_detect(rosa,"\\?")) %>%
+  filter(year == 2010) %>% # using 2010 only because there were very few heterozygotes in 2009.
+  mutate(month = str_sub(month,1,3),
+         month = factor(month, levels=c("May","Jun","Jul","Aug","Sep","Oct"))) %>%
+  count(rosa,month) %>% group_by(rosa) %>% mutate(n_geno = sum(n), 
+                                                    q = cumsum(round(n/n_geno,3)),
+                                                    denom = 1-(q*.45),
+                                                    tmp = paste0(rosa,"_",month))
+
+q_df
+```
+
+## Load ocean fishery data
+```{r}
+ocean_data <- read_rds("./data/108-Klamath-EE-frequency-model-data-oceanfishery.rds")
+```
+
+## 2010 ocean analysis
+
+```{r}
+
+ocean_2010 <- ocean_data %>% 
+  mutate(cMonth = month(COLLECTION_DATE,label = TRUE)) %>%  
+  filter(cYear==2010) %>%
+  count(rosa,cMonth) %>% mutate(tmp = paste0(rosa,"_",cMonth))
+
+counts2expand <- q_df %>% select(tmp,denom) %>%
+  left_join(ocean_2010,.,"tmp") %>%
+  mutate(denom = ifelse(rosa.x=="LLLLLLLL"&cMonth%in%c("May","Jun"),1.0,denom)) %>%
+  replace_na(list(denom=0.55)) %>% select(-rosa.y) %>% ungroup() %>% rename(rosa=rosa.x)
+
+counts2010e <- counts2expand %>% group_by(rosa) %>% mutate(Ngeno = n/lag(denom,1),
+                         Ngeno = ifelse(is.na(Ngeno),n,Ngeno)) %>% group_by(rosa) %>%
+  mutate(sumNgeno = sum(Ngeno)) %>% ungroup() %>%
+  mutate(sumNfish = sum(unique(sumNgeno)))
+
+counts2010e
+```
+
+Ngeno is the expanded count, the math to calculate this is n/denom lagged 1
+
+sumNgeno is the sum of all expanded RoSA genotype counts by genotype,
+
+sumNfish is the sum of all expanded RoSA counts
+
+For example; EL cMonth 6 n caught = 4, denom lagged 1  = 0.99145 --> 4 / 0.99145 = 4.034495
+
+For EL cMonth 5 there is no expansion because we assume no fish have left saltwater. Same for EE, no expansion for cMonth 5.
+
+Frequency of the E and L haplotypes after accounting for maturation probability and fish that escape to freshwater in 2010:
+```{r}
+counts2010e %>%
+  group_by(rosa) %>% 
+  slice(1) %>%
+  ungroup() %>%
+  summarise(E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
+            L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2))
+
+```
+ 
+
+## 2011 ocean analysis
+
+Note limited sample size (n=72) and fishery duration for 2011 (samples only from july and august)
+
+```{r ocean-2011}
+ocean_2011 <- ocean_data %>% 
+  mutate(cMonth = month(COLLECTION_DATE,label = TRUE)) %>%  
+  filter(cYear==2011) %>%
+  count(rosa,cMonth) %>% mutate(tmp = paste0(rosa,"_",cMonth))
+
+counts2expand_2011 <- q_df %>% select(tmp,denom) %>%
+  left_join(.,ocean_2011,"tmp") %>%
+  mutate(denom = ifelse(rosa.x=="LLLLLLLL"&cMonth%in%c("May","Jun"),1.0,denom)) %>%
+  replace_na(list(denom=0.55)) %>% select(-rosa.y) %>% ungroup() %>% rename(rosa=rosa.x)
+
+counts2011e <- counts2expand_2011 %>% group_by(rosa) %>% mutate(Ngeno = n/lag(denom,1),
+                         Ngeno = ifelse(is.na(Ngeno),n,Ngeno)) %>% filter(!is.na(Ngeno)) %>%
+  mutate(sumNgeno = sum(Ngeno)) %>% ungroup() %>%
+  mutate(sumNfish = sum(unique(sumNgeno)))
+
+counts2011e
+```
+
+Frequency of the E and L haplotypes after accounting for maturation probability and fish that escape to freshwater in 2011
+```{r}
+counts2011e %>%
+  group_by(rosa) %>% 
+  slice(1) %>%
+  ungroup() %>%
+  summarise(E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
+            L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2))
+```
+
+
+
+## 2012 ocean analysis
+
+```{r ocean-2012}
+ocean_2012 <- ocean_data %>% 
+  mutate(cMonth = month(COLLECTION_DATE,label = TRUE)) %>%  
+  filter(cYear==2012) %>%
+  count(rosa,cMonth) %>% mutate(tmp = paste0(rosa,"_",cMonth))
+
+counts2expand_2012<- q_df %>% select(tmp,denom) %>%
+  left_join(ocean_2012,.,"tmp") %>%
+mutate(denom = ifelse(rosa.x=="LLLLLLLL"&cMonth%in%c("May","Jun"),1.0,denom)) %>%
+  replace_na(list(denom=0.55)) %>% select(-rosa.y) %>% ungroup() %>% rename(rosa=rosa.x)
+
+counts2012e <- counts2expand_2012 %>% group_by(rosa) %>% mutate(Ngeno = n/lag(denom,1),
+                         Ngeno = ifelse(is.na(Ngeno),n,Ngeno)) %>% group_by(rosa) %>%
+  mutate(sumNgeno = sum(Ngeno)) %>% ungroup() %>%
+  mutate(sumNfish = sum(unique(sumNgeno)))
+
+counts2012e
+```
+
+Frequency of the E and L haplotype after accounting for maturation probability and fish that escape to freshwater in 2012
+```{r}
+counts2012e %>%
+  group_by(rosa) %>% 
+  slice(1) %>%
+  ungroup() %>%
+  summarise(E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
+            L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2))
+```
+
+
+# Uncorrected estimates of RoSA haplotype frequencies in ocean
+
+First get the oncorrected estimates of the frequencies of the different genotypes
+
+```{r}
+uncorr_geno_freqs <- ocean_data %>% 
+  count(cYear,rosa) %>%
+  group_by(cYear) %>%
+  mutate(freq = n/sum(n))
+
+uncorr_geno_freqs
+```
+
+Then add up the allele freqs from the genotypes.  $\times 1$ for each EE and $\times 1/2$ for each heterozygote:
+```{r}
+alle_freqs <- uncorr_geno_freqs %>%
+  mutate(E_alle_freq = case_when(
+    rosa == "EEEEEEEE" ~ freq,
+    rosa == "HHHHHHHH" ~ freq * 0.5,
+    TRUE ~ 0.0
+  ),
+  L_alle_freq = case_when(
+    rosa == "LLLLLLLL" ~ freq,
+    rosa == "HHHHHHHH" ~ freq * 0.5,
+    TRUE ~ 0.0
+  )
+  )
+alle_freqs
+```
+
+And now summarise that by year and format it for easy reading.
+```{r}
+alle_freqs %>%
+  group_by(cYear) %>%
+  summarise(E_haplo_freq = sum(E_alle_freq),
+            L_haplo_freq = sum(L_alle_freq))
+```
+
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+

@@ -1,0 +1,375 @@
+---
+title: "Coalescent Modeling of Distal-RoSA Recombinant"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+
+Do modeling with a discrete time coalescent with recombination to
+predict the frequency of recombinants under scenarios in which
+fall and spring run avoided interbreeding until human alteration
+of the ecosystem. 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+options(dplyr.show_progress = FALSE)
+```
+
+
+# Packages and paths
+
+```{r}
+library(tidyverse)
+library(parallel)
+
+
+dir.create("outputs/012", recursive = TRUE, showWarnings = FALSE)
+dir.create("intermediates/012", recursive = TRUE, showWarnings = FALSE)
+```
+
+
+
+# Coalescent Simulation
+
+## Assumptions / Narrative / Parameters
+
+We will assume discrete generations with a generation length of $g3$.  And we will
+assume a population of size $N$. This, for now, can be taken to be the effective size of the 
+population.  We will do a discrete coalescent backward in time for $Y$ years, which gets
+translated into $G = \lceil Y/g \rceil$ generations. 
+The operational units in our simulation are haploid segments of Chromosome 28 which are
+composed of two parts: a "Distal" part, $D$, and a "RoSA Region" part, $R$. These
+two regions together we refer to as a segment.
+
+We start with
+$n$ of these segments, $n$ being twice the number of diploid individuals sampled. To simulate
+the lines of descent backward in time from one generation to the next, we first simulate, for each
+segment, whether or not it experienced a recombination between $D$ and $R$ when being segregated 
+from the previous generation.  We assume a per-meiosis recombination rate of $\rho$.  An initial assumption
+would be around  1 centiMorgan per megabase, which given a distance between 
+$D$ and $R$ of 60 Kb, would yield $\rho = 6/10,000 = .0006$.  (In other words, it is quite unlikely
+that a recombination occurs).  If a lineage leading to a segment does experience a recombination,
+then the ancestors in the previous generation of the $D$ and $R$ regions are chosen
+independently.  If no recombination occurred, then a single ancestor in the previous generation
+is chosen for the segment, and that ancestor is the same for both the $D$ and $R$ region.  This
+process is repeated for $G$ generations, each time simulating recombination and lines of descent 
+to ancestors in the previous generation. An important point about this process is that it can
+simulate ancestral segments that do not have any descendants in the sample at either the
+$D$ or the $R$ locus (or both).
+
+
+The segments which represent extant lineages ancestral to an $R$ region in the
+IGH fall population are assigned the haplotype $F,F$, meaning the fall-associated allele at both the
+$D$ and the $R$ regions.  This reflects our assumption, here, that we are simulating a scenario in which,
+before the construction of Iron Gate Dam, all fall-run fish were $F,F$ and all spring-run fish were
+$S,S$.  Any segments after $G$ generations back in time that are not ancestral to IGH fall-run fish at
+the $R$ region _could_ be introgressed in from the spring run population.  We let $\gamma$ be the probability
+of those segments being $S,S$.  Hence $\gamma$ is a sort of introgression fraction.  Note that $\gamma = 0.5$ would imply that IGH fall-run fish today have half of their
+ancestry over their genome from the spring run population 100 years ago.  In the simulations
+here we use $\gamma = 0.5$.
+
+Once these ancestral segments are assigned in generation $G$ it is straightforward to go 
+back to the sample and, from the lines of descent for each region of each segment, count up
+the number of recombinant haplotypes simulated in the sample.
+
+
+## The Simulation Function
+
+Here it goes.  I think I will store all the intermediate results
+and things in a tibble, to make it easy to look at, check, and verify.
+```{r}
+
+#' @param N effective size of the population
+#' @param r rate of recombination between the distal SNPs and RoSA
+#' @param g average generation length
+#' @param Y number of years to run the simulation backward
+#' @param n the number of gene copies sampled
+discrete_coal_w_recomb <- function(
+  N = 1000,
+  r = 0.006,
+  g = 3,
+  Y = 100,
+  n = 200
+) {
+  
+  # set the number of generations:
+  G = ceiling(Y/g)
+  
+  # make a tibble to store the nodes in the tree, and initialize it at generation 1
+  L <- tibble(
+    Gen = 1,
+    Pleaves = as.list(1:n),  # these are list columns giving the leaves that descend from each node
+    Rleaves = as.list(1:n)   # Note that Pleaves should be called "Dleaves".  When I first did this
+                             # I denoted the distal region by P.
+  )
+  
+  # now, we for each cycle/generation we do two steps:
+  # 1. we sample "parents" (in the graph sense) for the D region and the P region
+  # 2. from those parents we create the nodes of the next generation.
+  # We makes some functions for those here
+  
+  # sample the parents of the current generation, and return the input
+  # tibble with the parents attached
+  sample_parents <- function(L) {
+    L %>%
+      mutate(DoRecombine = runif(n()) < r) %>%
+      mutate(Pparent_tmp = sample(1:N, n(), replace = TRUE),
+             Rparent_tmp = ifelse(!DoRecombine, Pparent_tmp, sample(1:N, n(), replace = TRUE))) %>%
+      mutate(
+        Pparent = as.integer(factor(Pparent_tmp, levels = sort(unique(c(Pparent_tmp, Rparent_tmp))))),
+        Rparent = as.integer(factor(Rparent_tmp, levels = sort(unique(c(Pparent_tmp, Rparent_tmp)))))
+        ) %>%
+      select(-Pparent_tmp, -Rparent_tmp)
+  }
+  
+  # create the nodes of the next generation from the parent assignments of
+  # the current.  This takes a tibble of the generation with the parents
+  # assigned and it returns a new tibble starting off the next generation.
+  form_nodes <- function(LP) {
+    
+    # first, make a new tibble with a column for segments
+    RET <- tibble(
+      Gen = LP$Gen[1] + 1,
+      Segments = sort(unique(c(LP$Pparent, LP$Rparent)))
+    )
+    
+    PL <- LP %>% 
+      group_by(Pparent) %>%
+      summarise(Pleaves = list(unique(unlist(Pleaves))))
+    
+    RL <- LP %>% 
+      group_by(Rparent) %>%
+      summarise(Rleaves = list(unique(unlist(Rleaves))))
+    
+    
+    RET %>% 
+      left_join(., PL, by = c("Segments" = "Pparent")) %>%
+      left_join(., RL, by = c("Segments" = "Rparent")) %>%
+      filter(!(map_lgl(Rleaves, is.null) & map_lgl(Pleaves, is.null)))
+    
+  }
+  
+  # with the initialization and the function defs out of the way, we can
+  # now cycle over the generations
+  Full_tibs_list <- list()
+  Full_tibs_list[[1]] <- sample_parents(L)
+  
+  for(gen in 2:G) {
+    NN <- form_nodes(Full_tibs_list[[gen - 1]])
+    Full_tibs_list[[gen]] <- sample_parents(NN)
+  }
+  
+  # just return the last generation (could do more, but no real need to at the moment)
+  Full_tibs_list[[G]]
+}
+```
+
+
+Now we need a function that effectively gene drops to the leaves
+and counts up recombinant vs non recombinant haplotypes.  Basically, if it has no
+leaves (descendants) in the $R$-region, then with probability $\gamma$ its $D$-region
+descendants get $S$, and with $1-\gamma$ they get $F$.  Every haplotype that is
+not null in the $R$ region gets $F,F$.  That's pretty much it and we just have to
+count things up after that. Note that $F$ here means "Fall" but is synonymous
+in this case with $L$ or "Late," while
+$S$ indicates "Spring" which is synonymous with $E$ or "Early," here.
+```{r}
+#' operates on the output of discrete_coal_w_recomb
+#' @param gamma the fraction of R-regions with no descendants that have S P-regions.
+count_haplotypes <- function(D, gamma = 0.5) {
+  
+  # first get a tibble of regions of ancestral segments with RoSA-regions from fall-run
+  Ftmp <- D %>% 
+    filter(!map_lgl(Rleaves, is.null)) 
+  
+  # prince region
+  FP <- tibble(
+      P_region = unlist(Ftmp$Pleaves),
+      P_Allele = "F"
+    )
+  # RoSA region
+  FR <-  tibble(
+      R_region = unlist(Ftmp$Rleaves),
+      R_Allele = "F"
+    )
+      
+  # and then a tibble of the ancestral segments with NULL R-regions (but non-null P regions, obviously)
+  # Prince regions that could be from spring
+  
+  # note that if there are no NULL rows in Rleaves, then there will be no spring haplotypes dropping down so that is
+  # just a big zero.
+  if(sum(map_lgl(D$Rleaves, is.null)) == 0) {
+    return(tibble(
+      P_Allele = c("F", "S"), 
+      R_Allele = c("F", "F"),
+      n = c(length(unlist(D$Pleaves)), 0),
+      freq = c(1.0, 0)
+                  ))
+  }
+  SP <- D %>%
+    filter(map_lgl(Rleaves, is.null)) %>%
+    mutate(hap = ifelse(runif(n()) < gamma, "S", "F")) %>%
+    group_by(Segments) %>%
+    dplyr::do(tibble(
+      P_region = unlist(.$Pleaves),
+      P_Allele = .$hap
+      )) %>%
+    ungroup() %>%
+    select(-Segments)
+  
+ 
+  # now, we put those regions together into the sampled segments in the end...
+  tmp <- bind_rows(FP, SP)
+  
+
+  left_join(tmp, FR, by = c("P_region" = "R_region")) %>%
+    rename(haplotype = P_region) %>% 
+    arrange(haplotype) %>%
+    count(P_Allele, R_Allele) %>%
+    mutate(freq = n / sum(n))
+
+}
+```
+
+And we can apply that with a `do()` to each of coalescent simulations.
+
+
+Now we just need to explore the parameter space and compare it to the real data.
+
+# Exploring some different parameter values
+
+Here are the parameter values we use for the final IGH runs.  Note that I changed these from
+the date that Iron Gate dam went in (about 100 years ago), to the times when people might have 
+first started really impacting things with mining (probably about 1838, so 180 years, which we call 60 generations.)
+```{r recomb-par-table, include=TRUE}
+param_table <- tribble(
+  ~Parameter, ~Description, ~"Value(s) Used",
+  "$N_e$",   "Size of the Wright-Fisher population",  "9,092",
+  "$g$",  "Average generation length", "3",
+  "$Y$", "Number of years of simulation", "180",
+  "$G$", "Number of generations simulated, equal to $\\lceil Y/g \\rceil$", "60",
+  "$n$", "Number of sampled segments = twice the number of sampled diploids", "898",
+  "$\\rho$", "Per-meiosis recombination rate between the $D$ and $R$ regions", "0.000255 and 0.00255",
+  "$\\gamma$", "Probability that a segment without a descendant at the $R$ region originated from a spring-run individual G generations ago", "0.5"
+)
+
+pander::pander(
+  as.data.frame(param_table),
+  booktabs = TRUE,
+#  caption = '(\\#tab:recomb-par-table) Parameters in the coalescent simulation model.',
+  justify = "left")
+```
+
+And to match sample size we saw that we have $n = 898$,
+and in those we had about 22% that were $S/F$.
+
+## r = 0.000255, 
+
+We simulate 100 independent coalescent-with-recombination trees.
+
+
+```{r}
+Normal_rho100 <- tibble(Rep = 1:100) %>%
+  group_by(Rep) %>%
+  dplyr::do(discrete_coal_w_recomb(N = 9092, r = 0.000255, n = 898, g = 3, Y = 180))
+
+result_normal_rho <- Normal_rho100 %>%
+  group_by(Rep) %>%
+  do(count_haplotypes(.))
+
+# and plot a histogram of the S,F haplotype freqs 
+normal_rho_plot <- result_normal_rho %>%
+  filter(P_Allele == "F" & R_Allele == "F") %>%
+  mutate(SF_hap_freq = 1 - freq) %>%
+  ggplot(., aes(x = SF_hap_freq)) +
+  geom_histogram(bins = 100) +
+  scale_x_continuous(limits = c(NA, 0.25))
+
+normal_rho_plot
+```
+
+That is nowhere close to 24%, so it is very unlikely that the pattern we see at
+IGH is from recent mixing only.
+
+## Crank up the recombination rate to 10 cM/Mb
+Make the recombination rate 10 cM/Mb:
+```{r}
+rho_10X_500 <- tibble(Rep = 1:100) %>%
+  group_by(Rep) %>%
+  dplyr::do(discrete_coal_w_recomb(N = 9092, r = 0.00255, n = 898, g = 3, Y = 180))
+
+result_rho_10X <- rho_10X_500 %>%
+  group_by(Rep) %>%
+  do(count_haplotypes(.))
+
+# and plot a histogram of the S,F haplotype freqs 
+rho_10X_plot <- result_rho_10X %>%
+  filter(P_Allele == "F" & R_Allele == "F") %>%
+  mutate(SF_hap_freq = 1 - freq) %>%
+  ggplot(., aes(x = SF_hap_freq)) +
+  geom_histogram(bins = 100) +
+  scale_x_continuous(limits = c(NA, 0.25))
+
+rho_10X_plot
+```
+
+
+## save things that we might want to come back to
+```{r}
+save(result_normal_rho, 
+     result_rho_10X, 
+     normal_rho_plot,
+     rho_10X_plot,
+     file = "outputs/012/results-and-plots.rda",
+     compress = "xz"
+     )
+```
+
+## Make some final figures:
+ 
+```{r}
+two_rhos <- list(`1 cM/Mb` = result_normal_rho,
+                 `10 cM/Mb` = result_rho_10X) %>%
+  bind_rows(.id = "recomb_rate")
+  
+final_plot <- two_rhos %>%
+  filter(P_Allele == "F" & R_Allele == "F") %>%
+  mutate(SF_hap_freq = 1 - freq) %>%
+  ggplot(., aes(x = SF_hap_freq)) +
+  geom_histogram(bins = 100) +
+  scale_x_continuous(limits = c(NA, 0.25)) + 
+  facet_wrap(~ recomb_rate, nrow = 1) +
+  theme_bw() +
+  geom_vline(xintercept = 0.22, color = "red") +
+  xlab("Frequency of E/L haplotype in simulated sample") +
+  ylab("Number of simulations (out of 100)")
+
+ggsave(final_plot, filename = "outputs/012/prince-rosa-recomb-histos.pdf", width = 7, height = 4)
+```
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+
+# Citations
+

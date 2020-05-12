@@ -1,0 +1,380 @@
+---
+title: "GWAS done using ANGSD"
+biblio-style: apalike
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+In the previous notebook we performed Principal Components Analysis on 114 fish and
+will use that now.
+
+# On the cluster
+
+We need to set up the files to use the -doAsso option.  The fish in the 
+analysis on are the rownames of `eigenvectors.tsv`.
+```sh
+# make the bamlist
+awk 'NR>1 {print "chinook_WGS_processed/" $1 ".rmdup.bam"}' stored_results/203/eigenvectors.tsv > intermediates/203/asso-bamlist.txt
+
+# now make a binary file.  We will let fall = 0 and spring = 1
+(
+  awk 'NR>1' data/wgs-chinook-samples.csv;
+  awk 'NR>1 {print $1}' stored_results/203/eigenvectors.tsv
+) | awk -F"," '
+  NF>1 && $NF=="Fall" {type[$1]=0;}
+  NF>1 && $NF=="Spring" {type[$1]=1;}
+  NF>1 {next}
+  {print type[$1]}
+' > intermediates/203/asso-yBin.txt
+
+# now make a file of the covariates.  We will make a series of them
+# with different numbers of PC's used.  
+for C in 0 3 10 30 60; do
+  C0=$(printf "%03d" $C)
+  echo $C0
+  awk 'NR>1' stored_results/203/eigenvectors.tsv | \
+    cut -d" " -f 2-$((C + 1)) >  intermediates/203/asso-covariates-$C0.txt
+done
+```
+
+With that we are ready to do our runs.  We will use the
+segmentation of the genome that was developed in 202-01.
+
+```sh
+# start the first 20 jobs to test
+sbatch --array=1-20 ./script/203-02-angsd-doAsso-array.sh
+# Submitted batch job 51087
+
+# that seems to be doing well.  So start up the rest:
+sbatch --array=21-2492%240 ./script/203-02-angsd-doAsso-array.sh
+# Submitted batch job 51142
+
+# after those are done, check for failures:
+for i in intermediates/203/asso/*.arg; do gotit=$(tail -n 1 $i | awk 'BEGIN {msg="No"} /ALL done/ {msg="Yes"} END {print msg}'); if [ $gotit = No ]; then echo $i; fi; done
+
+# results:
+intermediates/203/asso/2110.000.arg
+intermediates/203/asso/2110.003.arg
+intermediates/203/asso/2110.010.arg
+intermediates/203/asso/2110.030.arg
+intermediates/203/asso/2110.060.arg
+
+# so, we just have to crank up the memory on that one segment
+sbatch --array=2110 --mem-per-cpu=30G ./script/203-02-angsd-doAsso-array.sh
+# Submitted batch job 54770
+
+# that fixed those.
+```
+I also inspected the `.stderr` files and found that up to 30 PCs as covariates, things
+looked stable, but with 60 PCs there were reports of the test becoming unreliable and
+a suggestion to set minHigh higher.  So, I will just not process the results with 60
+principal components as covariates.  30 is plenty.  
+
+Here we catenate all those results so we can read them into R and compress them.
+```sh
+mkdir intermediates/203/catenated
+
+(echo "n" | awk '{printf("nCov\tCHROM\tPOS\tLRT\n")}'
+for C in 000 003 010 030; do 
+  cat intermediates/203/asso/*.$C.lrt0.gz | gunzip -c | \
+    awk -v nC=$C '$1 != "Chromosome" && $7 > 0 {printf("%d\t%s\t%s\t%s\n", nC, $1, $2, $7)}'
+done) > intermediates/203/catenated/asso-results.txt 
+```
+
+Now, read that into R and inspect:
+```r
+library(tidyverse)
+lrt <- read_tsv("intermediates/203/catenated/asso-results.txt")
+
+# now filter it down to only those sites with LRT > 2
+# (that still leaves us with about 1.6M of them over the 4 numbers
+# of covariates)
+lrt_f <- lrt %>%
+  filter(LRT > 2)
+  
+# and save that into stored_results
+write_rds(lrt_f, path = "stored_results/203/pca-corrected-assoc-lrts-filtered.rds", compress = "xz")
+```
+
+We also want to have the raw results that include the RoSA region.  By raw
+we mean that we haven't filtered out sites that did not yield a value (i.e. were not
+filtered out by ANGSD).  The 1 Mb block that includes the RoSA has index 1583.
+```sh
+mkdir -p stored_results/203/assoc_raw
+cp intermediates/203/asso/1583.* stored_results/203/assoc_raw/
+```
+
+We are now done with the calcs done on the cluster.  Back to the laptop...
+
+# On the laptop
+
+We now will do some analyses of these GWAS LRT values.
+
+## Broad Assessments 
+
+```{r}
+library(tidyverse)
+
+dir.create("outputs/203/", showWarnings = FALSE, recursive = TRUE)
+
+lrt <- read_rds("stored_results/203/pca-corrected-assoc-lrts-filtered.rds")
+```
+
+First, see how the LRT values changed with increasing numbers of
+PCs used as covariates.
+```{r}
+tmp <- lrt %>%
+  spread(key = nCov, value = LRT) %>%
+  rename(lrt_no_pc_covariates = `0`) %>%
+  gather(key = "num_pc_covariates", value = "lrt", `3`:`30`)
+
+# now, we want to be able to see how many points there are with no covariate
+# correction (because some end up becoming non-computable by ANGSD when
+# the covariates are added).
+lrt_against_0 <- tmp %>% filter(num_pc_covariates == 3) %>% mutate(num_pc_covariates = "0", lrt = lrt_no_pc_covariates) %>%
+  bind_rows(tmp) %>%
+  mutate(num_pc_covariates = factor(as.integer(num_pc_covariates)))
+
+ggplot(lrt_against_0, aes(x = lrt_no_pc_covariates, y = lrt, colour = num_pc_covariates)) +
+  geom_point(shape = 21) + 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed")
+```
+
+So, we see that adding 3 PCs as covariates tends to reduce the LRT value.
+We have some where using 10 or 30 PCs reduces it to zero, but also a number
+of cases where adding 10 PCs ends up causing no LRT to be computed (the
+calculations likely become unstable.)
+
+We also have a couple of crazy fliers where adding 10 or 30 PCs as
+covariates inflates the LRT values dramatically.  Those should not
+be trusted, I believe.   
+
+Let's look at this same thing but shade points by whether they are within 1 Mb of the
+RoSA or not, to see if we have any associated SNPs outside of that region.
+```{r}
+lrt_two_class <- lrt_against_0 %>%
+  mutate(status = case_when(
+    CHROM == "NC_037124.1" & POS > 11.26e6 & POS < 13.29e6 ~ "1 Mb from RoSA",
+    TRUE ~ "Not near RoSA"
+  )) %>% 
+  arrange(desc(status), desc(lrt))
+
+ggplot(lrt_two_class, aes(x = lrt_no_pc_covariates, y = lrt, colour = status)) +
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+  scale_colour_manual(values = c(`Not near RoSA` = "gray", `1 Mb from RoSA` = "black")) +
+  theme_bw()
+
+```
+
+OK, we have that most of the high values are near the RoSA.  
+
+## Manhattan Plots
+
+We now want to make Manhattan plots, from the results above it is clear that
+we should be quite wary of any values where the LRT with covariate correction
+is much greater than the LRT with no covariate correction (as those likely represent
+spurious results).  So, I will filter out values that are 1.1x the value
+with no covariate correction, otherwise there are just manifestly too many.
+
+Maybe we will also plot unfiltered results for 3 PCs.  Note that Anders does not recommend using
+a lot of PCs (better to use something around 3, he says:
+[https://github.com/ANGSD/angsd/issues/149](https://github.com/ANGSD/angsd/issues/149))
+```{r}
+lrt_pvalues <- lrt_against_0 %>%
+  mutate(abs_diff = -(log10(exp(1)) * pchisq(lrt, df = 1, lower.tail = FALSE, log.p = TRUE))) %>%
+  rename(Chromosome = CHROM, position = POS) %>%
+  mutate(num_pc_covariates = as.integer(as.character(num_pc_covariates)))
+# note, we name the column abs_diff to be compatible with our plotting functions
+# but will rename the axis to "negative log10 p-value".
+
+# now, make a version where we filter out the wacky high values that occur
+# when adding covariates
+lrt_p_values_no_fliers <- lrt_pvalues %>%
+  filter(lrt < 1.1 * lrt_no_pc_covariates)
+
+```
+
+Now, prep for MH plots:
+```{r}
+source("R/manhattan_plot_funcs.R")
+chrom_lengths <- read_tsv("stored_results/202/chrom_lengths_from_bams.txt.gz")
+```
+
+Now, simply make a series of plots. Here is a function to facilitate that:
+```{r}
+asso_mh_plots <- function(D) {
+  MM <- my_mh_prep(D, chrom_lengths)
+  
+  # correct the position of the NWs label.
+  idx <- which(MM$axisdf$cluster == "NWs")
+  MM$axisdf$clust_start[idx] <- MM$axisdf$clust_start[idx - 1] + MM$axisdf$clust_length[idx - 1] + 1
+  MM$axisdf$clust_center[idx] <- (2 * MM$axisdf$clust_start[idx] + MM$axisdf$clust_length[idx]) / 2
+  
+  MP <- plot_mh(MM$snps, MM$axisdf) +
+    xlab("Position Along Chromosome") +
+    ylab("Negative Log-10 P-value") +
+    ylim(0.8, NA)
+  
+  MP
+}
+```
+
+And then go for it:
+
+### GWAS, no PCA covariate correction
+
+These are the association p-values doing no correction:
+```{r}
+asso_mh_plots(D = lrt_p_values_no_fliers %>% filter(num_pc_covariates == 0))
+```
+
+And here we look at the top 40 SNPs:
+```{r}
+lrt_pvalues %>% 
+  filter(num_pc_covariates == 0) %>%
+  arrange(desc(abs_diff)) %>%
+  slice(1:40) %>%
+  rename(Log10_Pvalue = abs_diff)
+```
+
+One thing that we note is that we don't find only one value within the RoSA (the one at 12263509),
+and its Pvalue is far from the smallest.  Here is what I suspect is going on: the association method
+in `doAsso 2`, which allows covariates to be added to it, does not manage well when individuals
+are mostly homozygotes.  As the web page states:
+
+> This approach needs a certain amount of variability in the genotype probabilities. minHigh filters out sites that does not have at least [int] number of of homozygous major, heterozygous and homozygous minor genotypes. At least two of the three genotypes categories needs at least [int] individuals with a genotype probability above 0.9. This filter avoids the scenario where all individuals have genotypes with the same probability e.g. all are heterozygous with a high probability or all have 0.33333333 probability for all three genotypes.
+
+What is happening here is that the RoSA region
+has a lot of markers that are nearly fixed for alternate alleles between the spring and the fall
+run group (the cases and control), and as a consequence, ANGSD does not attempt to calculate
+a p-value for them.  In other words, the association test is not well suited to things that are
+totally fixed in alternate groups.  
+
+We will follow up on this below by looking at the results printed out for the 
+RoSA region in `stored_results/203/assoc_raw`.
+
+### GWAS, first 3 PCs as covariates, unfiltered
+
+Here, we don't remove the LRT values that are > 1.1x what they are with no PCA covariates.
+```{r}
+asso_mh_plots(D = lrt_pvalues %>% filter(num_pc_covariates == 3))
+```
+
+While we are at it, we should see which 10 of those SNPs are most highly associated.
+```{r}
+lrt_pvalues %>% 
+  filter(num_pc_covariates == 3) %>%
+  arrange(desc(abs_diff)) %>%
+  slice(1:10) %>%
+  rename(Log10_Pvalue = abs_diff)
+```
+
+Only two in the RoSA.
+
+
+### GWAS, first 10 PCs as covariates, unfiltered
+
+Here, we don't remove the LRT values that are > 1.1x what they are with no PCA covariates.
+```{r}
+asso_mh_plots(D = lrt_pvalues %>% filter(num_pc_covariates == 10))
+```
+
+We see far fewer points and a lot of spurious ones.  
+
+### GWAS, first 10 PCs as covariates, filtered
+
+We can remove the ones that are > 1.1x the LRT
+value with no PCA covariates.
+```{r}
+asso_mh_plots(D = lrt_p_values_no_fliers %>% filter(num_pc_covariates == 10))
+```
+
+So, not much there, but that is primarily a consequence of the method filtering
+out sites.
+
+I think that is enough to see. 
+
+
+## A closer look at why not many markers within the RoSA are found
+
+We can compare allele frequency absolute differences to the p-values, and also
+see whether the SNPs were filtered out by ANGSD.  We can read in the values
+that we produced in 202.
+```{r}
+abs_diffs <- read_rds("stored_results/202/abs_diffs_from_bams_gt0.25.rds")
+
+raw_lrts_files <- dir(path = "stored_results/203/assoc_raw/", pattern = "*lrt*", full.names = TRUE)
+names(raw_lrts_files) <- basename(raw_lrts_files)
+all_raw <- lapply(raw_lrts_files, function(x) {
+  read_tsv(x)
+}) %>%
+  bind_rows(.id = "file") %>%
+  separate(file, into = c("seg_idx", "num_pcs_as_covars", "a", "b"), sep = "\\.", convert = TRUE) %>%
+  select(-a, -b) %>%
+  left_join(abs_diffs, by = c("Chromosome" = "chromo", "Position" = "position"))
+```
+
+That gives us all those data, together.  Note that abs_diff is NA for many of them, because
+we filtered the absolute allele freq diffs to those > 0.25.  Let's have a look at 100 SNPs
+with the highest absolute frequency differences:
+```{r}
+all_raw %>% 
+  arrange(desc(abs_diff)) %>%
+  slice(1:100)
+```
+
+There, we see that most of these are in the RoSA.  Additionally, we see that none
+of them had an LRT calculated for them because ANGSD does not have great confidence in their
+genotypes, because with `doPost = 1`, as recommended in the ANGSD documentation, the allele
+frequency based prior for genotype probablities gives twice the weight to heterozygotes (since the
+pooled allele freq is always near 0.5 for these markers that are fixed between the E and L lineage
+haplotypes).
+
+So, let's filter the above to keep only the ones that ANGSD actually estimated an LRT:
+```{r}
+all_raw %>% 
+  arrange(desc(abs_diff)) %>%
+  filter(LRT != -999) %>% 
+  slice(1:500)
+```
+
+So, the ones with a high LRT just happen to be those that have enough heterozygotes for
+the SNP to not be filtered out.
+
+
+The irony here is that if someone just naively tried to do this type of association
+test in ANGSD with 10 PCs for covariates, and they didn't look closely at their results,
+they could easily have missed the association entirely.
+
+Since there are obviously a lot of pecularities and filtering issues when doing this
+type of association test with ANGSD, the results become much harder to interpret.
+It is much easier to intepret the absolute differences in allele frequency.  Furthermore,
+those absolute diffs are on the appropriate scale to see the decay in LD on the flanks of
+the RoSA etc.  For all these reasons, we will not replace Figure 2 with a Manhattan plot of
+association p-values.
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+

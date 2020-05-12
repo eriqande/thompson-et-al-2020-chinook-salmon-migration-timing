@@ -1,0 +1,322 @@
+---
+title: "103-Klamath-estuary-GonadSI-mixed-model-analysis"
+author: "Neil Thompson"
+date: "Last Updated: `r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# ROSA analysis of klamath estuary fish with gonadosomatic index metric. Conducting a model selection approach to evaluate the influence of RoSA genotype on gonadosomatic index.
+```{r}
+library(tidyverse)
+library(nlme)
+```
+
+Load RoSA genotype data and join it to the estuary metadata which includes Gonadosomatic Index data (Hearsey 2011).
+```{r load-data}
+rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
+estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
+rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+  dplyr::select(-ID) %>%
+  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  dplyr::select(NMFS_DNA_ID, rosa, everything())
+```
+
+Remove all samples with ANY missing data. And the recombinant genotypes.
+
+```{r}
+rosa_stats <- rosa_meta %>%
+  filter(!str_detect(rosa,"\\?"),
+         rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL"))
+```
+
+There are `r nrow(rosa_stats)` at-entry estuary samples with 100% complete genotypes. There are `r nrow(rosa_data)` Klamath at-entry estuary site samples.
+
+Visualize the relationship between RoSA and gonadosomatic index.
+```{r gonadsi-by-year-plot}
+rosa_stats %>%
+mutate(rosa_f  = factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
+ggplot(.,aes(x = julian,y = gsi,fill = rosa_f,colour=rosa_f)) + 
+  geom_point() +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Gonadosomatic Index") +
+  scale_fill_discrete(name = "Genotype") + 
+  scale_colour_discrete(name = "Genotype") +
+  theme_bw() +
+  scale_x_continuous(breaks=c(121,152,182,213,244,274,305),labels=c("May-01","June-01",
+                                                            "July-01","Aug-01","Sept-01","Oct-01","Nov-01"))+
+    theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),axis.text.x = element_text(angle = 45, hjust = 1))+
+          guides(fill=FALSE,
+                 colour=FALSE)+
+       facet_grid(year~.)
+```
+
+```{r gonadsi-by-rosa-and-sex-and-year}
+rosa_stats %>%
+mutate(rosa_f  = factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
+ggplot(.,aes(x = julian,y = gsi,fill = rosa_f,colour=rosa_f)) + 
+  geom_point() +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Gonadosomatic Index") +
+  scale_fill_discrete(name = "Genotype") + 
+  scale_colour_discrete(name = "Genotype") +
+  theme_bw() +
+  scale_x_continuous(breaks=c(121,152,182,213,244,274,305),labels=c("May-01","June-01",
+                                                            "July-01","Aug-01","Sept-01","Oct-01","Nov-01"))+
+    theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),axis.text.x = element_text(angle = 45, hjust = 1), strip.background = element_blank()) + 
+  facet_grid(year~sex)
+```
+
+## Start mixed effects model analysis to determine if adding RoSA as a random effect predicts Gonadosomatic Index better than just a model with estuary sampling date.
+
+```{r}
+stat_data <- rosa_stats %>% 
+  mutate(sex_f = factor(sex,levels=c("f","m")),
+         year_f = factor(year,levels=c("2009","2010")),
+         rosa_f = factor(rosa, levels = c("EEEEEEEE","HHHHHHHH","LLLLLLLL")),
+         log_est = log(julian),
+         log_est2= log(julian)^2, 
+         gonadsi = round(gsi,4))
+```
+
+## exploratory plotting to look at variance among explanatory variables
+
+```{r}
+plot(gonadsi~log_est,stat_data)
+```
+
+```{r}
+plot(gonadsi~log_est2,stat_data)
+```
+
+```{r}
+plot(gonadsi~sex_f,stat_data)
+```
+
+```{r}
+plot(gonadsi~year_f,stat_data)
+```
+
+It looks like all of the explanatory variables may have a violation of equal variance.  I'll use the different variance structures to deal with this and see if it's preferred over a model without the additional variance structures.
+
+
+It looks like all of the explanatory variables may have a violation of equal variance.  I'll use the different variance structures to deal with this and see if it's preferred over a model without the additional variance structures.
+```{r GLS-variance-structure-selection}
+M0 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,method = "REML", data = stat_data)
+logestFixed <- varFixed(~log_est)
+logest2Fixed <- varFixed(~log_est2)
+logest2Power <- varPower(form=~log_est2)
+logest2ConstPower <- varConstPower(form =~log_est2)
+estFixed <- varFixed(~log_est+log_est2)
+sexFixed <- varIdent(~sex_f)
+yearFixed <- varIdent(~year_f)
+sexyrFixed <- varIdent(~sex_f+year_f)
+combFixed <- varComb(varFixed(~log_est+log_est2),
+                     varIdent(~sex_f+year_f))
+M1 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = logestFixed ,method = "REML",data = stat_data)
+M2 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = logest2Fixed ,method = "REML",data = stat_data)
+M3 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = estFixed ,method = "REML",data = stat_data)
+M4 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = sexFixed ,method = "REML",data = stat_data)
+M5 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = yearFixed ,method = "REML",data = stat_data)
+M6 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = sexyrFixed ,method = "REML",data = stat_data)
+M7 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex ,weights = combFixed ,method = "REML",data = stat_data)
+M8 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex, weights = logest2Power,method = "REML",data = stat_data)
+M9 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex, weights = logest2ConstPower,method = "REML",data = stat_data)
+AIC(M0, M1, M2, M3, M4, M5, M6, M7, M8, M9) 
+```
+
+The model that uses the varPower variance structure on the log_est2 explanatory variable is the preferred model indicated by AIC. The varConstPower is nearly the same as the varPower structure, but those two are highly preferred over the other variance structures.
+
+Model checking of the varPower model (M8)
+```{r residual-plot-with-variance-structure-included}
+e1 <- resid(M8,type="normalized")
+plot(e1~log_est2, stat_data)
+```
+
+Awesome, this looks way way better than the original gls model.
+
+```{r residual-plot-with-variance-structure-included-sex}
+plot(e1~sex_f, stat_data)
+```
+
+```{r residual-plot-with-variance-structure-included-log_est}
+plot(e1~log_est, stat_data)
+```
+
+```{r residual-plot-with-variance-structure-included-year}
+plot(e1~year_f, stat_data)
+```
+
+```{r histo-of-resids}
+hist(e1,main="Histogram of residuals") # looks ok
+```
+
+
+Moving forward with the varPower structure on log_est2 for the model selection exercise
+```{r random-effects-model-intercept-only}
+mm1 <- lme(gonadsi ~ 1 + log_est + log_est2 + year_f + sex, random = ~1 | rosa_f, method = "REML", weights = logest2Power,data = stat_data) #random intercept model
+anova(M8,mm1) # likelihood ratio test to determine if the mixed effects model is preferred over the gls with varPower variance structure.
+```
+
+Adding a random intercept for RoSA does not improve the model. When forcing the 3 RoSA genotypes to have the same slope (same effect of estuary date on gonadosomatic index) there is no support for differing intercepts (i.e. all RoSA genotypes start with the same gonadosomatic index at day 0).
+
+Lets see what happen when a random intercept and slope for RoSA are included. A random slope would indicate that the strength of the relationship between gonadosomatic index and estuary entry date is not the same among RoSA genotypes.
+
+```{r intercept-and-slope}
+mm2 <- lme(gonadsi ~ 1 + log_est + log_est2 + year_f + sex, random = ~1 + log_est|rosa_f, method = "REML", weights = logest2Power, data = stat_data)
+anova(M8, mm2)
+```
+
+A random slope and intercept model is not preferred over the non-random model. (Note this does not differ in a different slope for log_est or log_est2 is used). I used both log_est and log_est2 (change code to "random = ~1+log_est2|RoSA") and both models were not preferred over the gls.
+
+
+Let's see if the random slope (without random intercept) for RoSA is the most preferred model
+
+```{r slope-only}
+mm3 <- lme(gonadsi ~ 1 + log_est + log_est2 + year_f + sex, random = ~ 0 + log_est|rosa_f, method = "REML", weights = logest2Power, data = stat_data)
+anova(M8,mm3)
+```
+
+No support for a random slope model. I used both log_est and log_est2 (change code to "random = ~0+log_est2|rosa_f") and both models were not preferred over the gls. See code chunks below.
+
+```{r logest2-eval-mixed-model}
+mm2a <- lme(gonadsi ~ 1 + log_est + log_est2 + year_f + sex, random = ~1 + log_est2|rosa_f, method = "REML", weights = logest2Power, data = stat_data)
+anova(M8, mm2a)
+mm3a <- lme(gonadsi ~ 1 + log_est+ log_est2 + year_f + sex, random = ~ 0 + log_est2|rosa_f, method = "REML", weights = logest2Power, data = stat_data)
+anova(M8,mm3a)
+```
+The random slope model isn't preferred over the fixed effects model or the random slope and random intercept model.
+
+Making sense of these results:
+
+Julian Day is highly significant (it appears, need to do the model selection procedure--> see below)
+
+Random intercept for RoSA not supported --> RoSA genotypes don't start off at different gonadSI values when the slope relationship between estuary sampling date and gonadosomatic index is not allowed to vary for the three RoSA genotypes.
+
+Random slope for RoSA not supported --> The effect size of estuary sampling date on gonadosomatic index is not different among RoSA genotypes when the intercept is constrained to be the same for all 3 genotypes.
+
+Random slope and intercept model is not preferred over the GLS model. 
+
+## random intercept model coefficients
+```{r}
+mm1$coefficients
+```
+
+## random slope model coefficients
+```{r}
+mm3$coefficients
+```
+
+## random intercept and slope model coefficients
+```{r}
+mm2$coefficients
+```
+
+#Model selection on the fixed effects in the GLS model (M8) and see what predictors significantly influence gonadosomatic index.
+```{r GSI-model-selection}
+M0 <- gls(gonadsi ~ 1 + log_est + log_est2 +  year_f + sex, weights = logest2Power, data = stat_data)
+M1 <- gls(gonadsi ~ 1 + log_est + log_est2 + sex, weights = logest2Power, data = stat_data) # model without year
+M2 <- gls(gonadsi ~ 1 + log_est + log_est2 + year_f, weights = logest2Power, data = stat_data) # model without sex
+M3 <- gls(gonadsi ~ 1 + log_est + year_f + sex, weights = logest2Power, data = stat_data) # model without log estuary date^2
+M4<- gls(gonadsi ~ 1 +  log_est2 +  year_f + sex, weights = logest2Power, data = stat_data) # model without log estuary date
+fit0ml <- update(M0, . ~ ., method = "ML")
+fit1ml <- update(M1, . ~ ., method = "ML")
+fit2ml <- update(M2, . ~ ., method = "ML")
+fit3ml <- update(M3, . ~ ., method = "ML")
+fit4ml <- update(M4, . ~ ., method = "ML")
+```
+
+#Likelihood ratio tests using full GLS model;
+gonadsi ~ 1 + log_est + log_est2 +  year_f + sex, weights = logest2Power, data = stat_data
+
+LRT on year
+```{r lrt-year-GLS}
+anova(fit0ml, fit1ml) # year is not significant
+```
+
+LRT on sex
+```{r LRT-sex-GLS}
+anova(fit0ml,fit2ml) # sex is significant
+```
+
+LRT on log_est^2
+```{r LRT-log_est2-GLS}
+anova(fit0ml,fit3ml) #log estuary date squared is significant
+```
+
+LRT on log_est
+```{r LRT-log_est-GLS}
+anova(fit0ml,fit4ml) #log estuary date is significant
+```
+
+```{r}
+library(sjPlot)
+tab_model(M0)
+```
+(The error message here is irrelevant to printing the table we want.)
+
+
+## Remove year from the GLS and redo model selection on remaining fixed effects
+```{r GSI-model-selection-round-2}
+M1 <- gls(gonadsi ~ 1 + log_est + log_est2 + sex, weights = logest2Power, data = stat_data) # model without year
+M2 <- gls(gonadsi ~ 1 + log_est + log_est2 , weights = logest2Power, data = stat_data) # model without sex
+M3 <- gls(gonadsi ~ 1 + log_est +  sex, weights = logest2Power, data = stat_data) # model without log estuary date^2
+M4<- gls(gonadsi ~ 1 +  log_est2 +  sex, weights = logest2Power, data = stat_data) # model without log estuary date
+fit1ml <- update(M1, . ~ ., method = "ML")
+fit2ml <- update(M2, . ~ ., method = "ML")
+fit3ml <- update(M3, . ~ ., method = "ML")
+fit4ml <- update(M4, . ~ ., method = "ML")
+```
+
+## Likelihood ratio tests using reduced GLS model
+
+gonadsi ~ 1 + log_est + log_est2 + sex, weights = logest2Power, data = stat_data
+
+LRT on sex
+```{r LRT-reduced-sex}
+anova(fit1ml, fit2ml) # sex is significant
+```
+
+LRT on log_est2
+```{r LRT-reduced-log_est}
+anova(fit1ml,fit3ml) # log estuary date squared is significant
+```
+
+LRT on log_est
+```{r LRT-reduced-log_est2}
+anova(fit1ml,fit4ml) #log estuary date is significant
+```
+
+In conclusion, sex, log_est and log_est2 significantly influence gonadosomatic index. 
+
+```{r}
+tab_model(M1)
+```
+(The error message here is irrelevant to printing the table we want.)
+
+For the effects of RoSA on gonadosomatic index, there is no evidence that a difference in intercept or slope occurs among the RoSA genotypes. 
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```

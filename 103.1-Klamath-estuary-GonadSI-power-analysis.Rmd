@@ -1,0 +1,449 @@
+---
+title: "103.1-Klamath-estuary-GonadSI-power-analysis"
+author: "Neil Thompson"
+date: "Last Updated: `r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+We decided to do a power analysis to answer the question, "what difference in gonadosomatic index values would need to be present in the data to have a significant random intercept effect in model selection between a non-mixed model and a mixed effect model (RoSA=random)?"
+
+# Developing the Power Analysis
+
+```{r}
+library(tidyverse)
+library(cowplot)
+library(nlme)
+
+dir.create("./outputs/103.1/", recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r load-data}
+rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
+
+estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
+
+rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+  dplyr::select(-ID) %>%
+  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  dplyr::select(NMFS_DNA_ID, rosa, everything())
+```
+
+Remove all samples with ANY missing data. And remove the recombinant genotypes. For this analysis I'm going to use estuary data from 2010 only. This is because  there are only 12 EL fish sampled in 2009 which is a really small sample to estimate variance from. The larger EL sample size in 2010 (n=52) will be generate a more robust analysis.
+
+```{r}
+stat_data <- rosa_meta %>%
+  rename(gonadsi=gsi) %>%
+  filter(rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL"),
+         year=="2010") %>%
+  mutate(log_est = log(julian),
+         log_est2 = log_est^2)
+```
+
+
+To simulate realistic data I am going to do simple linear regression on the data subsetted by RoSA genotype. From that I can estimate the gonadosomatic index values quite precisely. I'm going to simulate a single years worth of data to keep the power analysis simplified.
+```{r}
+m_only <- stat_data %>% filter(rosa=="LLLLLLLL") 
+lm(gonadsi ~ 1 + log_est + log_est2 + sex ,m_only)
+```
+
+To generate variance in the data I’ll need the standard deviations of gonadsi for each sex. 
+```{r}
+stat_data %>% filter(rosa=="LLLLLLLL") %>% group_by(sex) %>% 
+  summarise(mean_gonad = mean(gonadsi), sd_gonad = sd(gonadsi),
+            mean_logestuarydate = mean(log_est),sd_logestuarydate = sd(log_est))
+```
+
+The linear regression effect values and standard deviations will be used to simulate the LL RoSA data.
+```{r L-lin-reg}
+int= 2.54219
+log_esteffect =  -1.00516
+log_est2effect = 0.10010
+sex_effect = -.01662
+
+fd1<-  tibble(logest_fake = rnorm(n=100,mean=5.49,sd=0.08), #generates 100 random estuary entry dates based on mean entry date and SD from 2010 data
+                    logest2_fake = logest_fake^2,
+                    RoSA = "LL",
+                    sex_fake = rep(0:1,each=50), # create 50 males and 50 females
+                    eps_female = rnorm(n=100,mean=0,sd=0.0144), #error for females
+                    eps_male = rnorm(n=100, mean = 0, sd = 0.0121),#error for females
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake, #produce estimate from linear regression
+                    gonad_fake = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female)) %>% # add variance into estimate based on sex of individual
+  filter(gonad_fake>0)
+
+ggplot(fd1,aes(x=exp(logest_fake),y=gonad_fake, colour=factor(sex_fake)))+geom_point() +facet_wrap(sex_fake~.) + ggtitle("female=0")
+```
+
+Cool, that appears to be ok for LL fish.
+```{r early-run-homozygote-linear-regression}
+e_only <- stat_data %>% filter(rosa=="EEEEEEEE")
+lm(gonadsi~log_est+log_est2+sex, e_only)
+```
+
+To generate variance in the data I’ll need the standard deviations of gonadsi for each sex.
+```{r e-summary}
+stat_data %>% filter(rosa=="EEEEEEEE") %>%  group_by(sex) %>% 
+  summarise(mean_gonad = mean(gonadsi), sd_gonad = sd(gonadsi),
+            mean_logestuarydate = mean(log_est),sd_logestuarydate = sd(log_est))
+```
+
+```{r EE-data-generation}
+int= 0.82412
+log_esteffect =  -0.34246
+log_est2effect = 0.03621
+sex_effect = -0.01331
+
+fd2 <-  tibble(logest_fake = rnorm(n=100,mean=5.05,sd=0.11), # mean and SD from 2009 data
+                    logest2_fake = logest_fake^2,
+                    RoSA = "EE",
+                    sex_fake = rep(0:1,each=50),
+                    eps_female = rnorm(n=100,mean=0,sd=0.0070), 
+                    eps_male = rnorm(n=100, mean = 0, sd = 0.0026),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_fake = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female))   %>%
+  filter(gonad_fake > 0)
+
+ggplot(fd2,aes(x=exp(logest_fake),y=gonad_fake, colour=factor(sex_fake)))+geom_point() +facet_wrap(sex_fake~.)
+```
+
+heterozygote linear regression
+```{r EL-fish}
+h_only <- stat_data %>% filter(rosa=="HHHHHHHH")
+lm(gonadsi~log_est+log_est2+sex, h_only)
+```
+To generate variance in the data I’ll need the standard deviations of gonadsi for each sex.
+```{r}
+stat_data %>% filter(rosa=="HHHHHHHH")  %>%  
+   group_by(sex) %>% 
+  summarise(mean_gonad = mean(gonadsi), sd_gonad = sd(gonadsi),
+            mean_logestuarydate = mean(log_est),sd_logestuarydate = sd(log_est))
+```
+```{r EL-fish-data-production}
+int= 0.87697
+log_esteffect =  -0.37153
+log_est2effect = 0.04004
+sex_effect = -0.02044
+
+fd3<-  tibble(logest_fake = rnorm(n=50,mean=5.27,sd=0.08), # mean and SD from 2009
+                    logest2_fake = logest_fake^2,
+                    RoSA = "EL",
+                    sex_fake = rep(0:1,each=25),
+                    eps_female = rnorm(n=50,mean=0,sd=0.0184), 
+                    eps_male = rnorm(n=50, mean = 0, sd = 0.0046),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_fake = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female))  %>%
+  filter(gonad_fake>0)
+
+ggplot(fd3,aes(x=exp(logest_fake),y=gonad_fake, colour=factor(sex_fake)))+geom_point() +facet_wrap(sex_fake~.)
+```
+
+join the simulated EE, EL and LL data frames together and plot it. This plot should look pretty damn similar to the real data.
+```{r join-sim-data-and-plot}
+lm_sim <- bind_rows(fd1,fd2,fd3)
+
+sex_names <- list(
+  "0" = "Female",
+  "1" = "Male"
+)
+
+plot_labeller <- function(variable,value){
+  return(sex_names[value])
+}
+
+ggplot(lm_sim,aes(x=exp(logest_fake),y=gonad_fake, colour=RoSA))+geom_point() +facet_wrap(sex_fake~.)+
+  scale_x_continuous(name = "Estuary sampling date", limits=c(121,305), breaks=c(121,152,182,213,244,274),
+                     labels = c("May-01","June-01","July-01","Aug-01","Sept-01","Oct-01"))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle = 45, hjust = 1,size=12),
+        strip.background =element_blank()) +
+  facet_grid(.~factor(sex_fake), labeller = plot_labeller)
+```
+
+Cool, I think that looks pretty good. Now I’ll just need to add in the estimated early allele effect as the code above simply generates data that is similar to the real gonadosomatic index data.
+
+I’ll assume an additive model here too. For every E allele in the RoSA genotype the gonadosomatic index will increase by X units. This will be straightforward to add into the data generation in a function.
+
+WRAP INTO FUNCTION FOR POWER ANALYSIS.
+Let’s make a simulated data generation function first.
+```{r gonad-function}
+gonad_data <- function(allele_effect,pop_size){
+# EE data
+int= 0.82412
+log_esteffect =  -0.34246
+log_est2effect = 0.03621
+sex_effect = -0.01331
+
+fake_ee <-  tibble(logest_fake = rnorm(n=100,mean=5.05,sd=0.11), # mean and SD from 2010 data
+                    logest2_fake = logest_fake^2,
+                    RoSA = "EE",
+                    sex_fake = rep(0:1,each=50),
+                    eps_female = rnorm(n=100,mean=0,sd=0.0070), 
+                    eps_male = rnorm(n=100, mean = 0, sd = 0.0026),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_var = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female),
+                   gonad_fake = gonad_var)   %>%
+  filter(gonad_fake > 0)
+
+# EL data
+int= 0.87697
+log_esteffect =  -0.37153
+log_est2effect = 0.04004
+sex_effect = -0.02044
+
+fake_el =  tibble(logest_fake = rnorm(n=pop_size/2,mean=5.27,sd=0.08),
+                    logest2_fake = logest_fake^2,
+                    RoSA = "EL",
+                    sex_fake = rep(0:1,each=pop_size/4),
+                    eps_female = rnorm(n=pop_size/2,mean = 0,sd=0.0184), 
+                    eps_male = rnorm(n=pop_size/2, mean = 0, sd = 0.0046),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_var = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female),
+                    gonad_fake = gonad_var + allele_effect)  %>%
+  filter(gonad_fake>0)
+  
+# LL data
+int= 2.54219
+log_esteffect =  -1.00516
+log_est2effect = 0.10010
+sex_effect = -.01662
+  
+fake_ll = tibble(logest_fake = rnorm(n=pop_size,mean=5.49,sd=0.08),
+                    logest2_fake = logest_fake^2,
+                    RoSA = "LL",
+                    sex_fake = rep(0:1,each=pop_size/2),
+                    eps_female = rnorm(n=pop_size,mean=0,sd=0.0144), 
+                    eps_male = rnorm(n=pop_size, mean = 0, sd =0.0121),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_var = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female),
+                    gonad_fake = gonad_var + 2*allele_effect) %>% 
+  filter(gonad_fake>0)
+
+lm_sim = bind_rows(fake_ee, fake_el, fake_ll) %>%
+  mutate(RoSA = factor(RoSA,levels=c("EE","EL","LL")))
+lm_sim
+}
+
+tmp1 <- gonad_data(allele_effect=0.02, pop_size=100) # each L haplo increases gsi by 2 units.
+
+ggplot(tmp1,aes(x=exp(logest_fake),y=gonad_fake, colour=RoSA))+geom_point() +facet_wrap(sex_fake~.)+
+  scale_x_continuous(name = "Estuary sampling date", limits=c(121,305), breaks=c(121,152,182,213,244,274),
+                     labels = c("May-01","June-01","July-01","Aug-01","Sept-01","Oct-01"))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle = 45, hjust = 1,size=12),
+        strip.background =element_blank()) +
+  facet_grid(.~factor(sex_fake), labeller = plot_labeller)
+```
+
+
+The function appears to be working as I want it to. Let’s see if an early allele effect of 0.02 produces a statistically significant random intercept
+```{r model-selection}
+logest2Power <- varPower(form=~logest2_fake)
+
+power_tmp <- gls(gonad_fake ~ 1 + logest_fake + logest2_fake + sex_fake, weights = logest2Power, data = tmp1) # remove the year factor, simulate a single year of data.
+
+power_mm_tmp <- lme(gonad_fake ~ 1 + logest_fake + logest2_fake + sex_fake, random = ~1 | RoSA, method = "REML", weights = logest2Power, data = tmp1) #random intercept model
+
+anova(power_tmp,power_mm_tmp) 
+```
+
+Make a function that incorporates the model selection between a GLS and mixed effects model (random intercept)
+```{r model-selection-function}
+gonad_data_pwr_analysis <- function(allele_effect,pop_size){
+# EE data
+int= 0.82412
+log_esteffect =  -0.34246
+log_est2effect = 0.03621
+sex_effect = -0.01331
+
+fake_ee <-  tibble(logest_fake = rnorm(n=100,mean=5.05,sd=0.11), # mean and SD from 2010 data
+                    logest2_fake = logest_fake^2,
+                    RoSA = "EE",
+                    sex_fake = rep(0:1,each=50),
+                    eps_female = rnorm(n=100,mean=0,sd=0.0070), 
+                    eps_male = rnorm(n=100, mean = 0, sd = 0.0026),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_var = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female),
+                   gonad_fake = gonad_var)  %>%
+  filter(gonad_fake>0) 
+
+# EL data
+int= 0.87697
+log_esteffect =  -0.37153
+log_est2effect = 0.04004
+sex_effect = -0.02044
+
+fake_el =  tibble(logest_fake = rnorm(n=pop_size/2,mean=5.27,sd=0.08),
+                    logest2_fake = logest_fake^2,
+                    RoSA = "EL",
+                    sex_fake = rep(0:1,each=pop_size/4),
+                    eps_female = rnorm(n=pop_size/2,mean = 0,sd=0.0184), 
+                    eps_male = rnorm(n=pop_size/2, mean = 0, sd = 0.0046),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_var = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female),
+                    gonad_fake = gonad_var + allele_effect)  %>%
+  filter(gonad_fake>0)
+  
+# LL data
+int= 2.54219
+log_esteffect =  -1.00516
+log_est2effect = 0.10010
+sex_effect = -.01662
+  
+fake_ll = tibble(logest_fake = rnorm(n=pop_size,mean=5.49,sd=0.08),
+                    logest2_fake = logest_fake^2,
+                    RoSA = "LL",
+                    sex_fake = rep(0:1,each=pop_size/2),
+                    eps_female = rnorm(n=pop_size,mean=0,sd=0.0144), 
+                    eps_male = rnorm(n=pop_size, mean = 0, sd =0.0121),
+                    gonad_est = int + log_esteffect*logest_fake + log_est2effect*logest2_fake + sex_effect*sex_fake,
+                    gonad_var = ifelse(sex_fake==1, gonad_est+eps_male, gonad_est+eps_female),
+                    gonad_fake = gonad_var + 2*allele_effect) %>% 
+  filter(gonad_fake>0)
+
+lm_sim = bind_rows(fake_ee, fake_el, fake_ll) %>%
+  mutate(RoSA = factor(RoSA,levels=c("EE","EL","LL")))
+
+logest2Power <- varPower(form=~logest2_fake)
+
+power_tmp <- gls(gonad_fake ~ 1 + logest_fake + logest2_fake + sex_fake, weights = logest2Power, data = lm_sim) # remove the year factor, simulate a single year of data.
+
+power_mm_tmp <- lme(gonad_fake ~ 1 + logest_fake + logest2_fake + sex_fake, random = ~1 | RoSA, method = "REML", weights = logest2Power, data = lm_sim) #random intercept model
+
+
+p_val <- anova(power_tmp,power_mm_tmp)$"p-value"[2]
+
+p_val
+}
+```
+
+# Run the power analysis simulation 
+
+Run model selection 1000 times and see how many times the mixed effects model is preferred over the GLS
+```{r model-selection-1000x}
+rep_outp <- replicate(1e3,gonad_data_pwr_analysis(allele_effect = 0.02,pop_size = 100))
+
+table(rep_outp <= 0.05)
+```
+Wow, I’m surprised by that. But it’s good news for the gonadosomatic index analysis!
+
+What effect size would 80% power be achieved? This is going to be smaller than I expected.  Only do
+250 simulated data sets for each effect size, here.
+```{r effect-size-for-80pct-power}
+alpha <- 0.05
+power_table <- tibble(
+  allele_effect = seq(0.0075, 0.02, by = 0.0025)) %>%
+  mutate(power = map_dbl(allele_effect, function(allele_effect) {
+    ps <- replicate(250, gonad_data_pwr_analysis(allele_effect = allele_effect ,pop_size = 100))
+    mean(ps < alpha)
+  }))
+
+ggplot(power_table, aes(allele_effect, power)) +
+  geom_point() +
+    geom_line() +
+  scale_x_continuous(limits=c(0.0075, 0.02), breaks=c(0.0075,0.01,0.0125,0.0150,0.0175, 0.02), labels=c(0.0075,0.01,0.0125,0.0150,0.0175, 0.02)) +
+  geom_hline(yintercept = 0.8)
+
+ggsave("./outputs/103.1/allele_effect_gonadsi_power_simulation.pdf")
+```
+
+Wow, so we could find a statistically significant random intercept effect with as little as 0.024 gonadsi units separating EE and LL genotypes.
+
+Now make a 2x2 matrix figure to show what the data would look like with an allele effect of 0.012 per L haplotype. 
+```{r plot-settings}
+sex_names <- list(
+  "0" = "Female",
+  "1" = "Male"
+)
+
+plot_labeller <- function(variable,value){
+  return(sex_names[value])
+}
+```
+
+Set up some functions to simulate 20 data sets and do all the calculations on them
+and then keep the first four that are significant (just to see what they look like).
+
+Simulation 1 for the figure. Make sure the ANOVA is significant, it it turns out not to be significant re-run the code chunk until you get a significant result.
+```{r sim1}
+plot_simmed_data <- function(tmp1) {
+  ggplot(tmp1,aes(x=exp(logest_fake),y=gonad_fake, colour=RoSA))+geom_point() +facet_wrap(sex_fake~.)+
+    scale_x_continuous(name = "Estuary sampling date", limits=c(121,349), breaks=c(121,152,182,213,244,274,305,335),
+                       labels = c("May-01","June-01","July-01","Aug-01","Sept-01","Oct-01","Nov-01","Dec-01"))+
+    scale_y_continuous(name = "fake gonadosomatic index", limits=c(0,0.15), breaks=c(0,0.05,0.10,0.15),
+                       labels = c(0,0.05,0.10,0.15))+
+    theme_bw()+
+    theme(axis.text.x=element_text(angle = 45, hjust = 1,size=12),
+          strip.background =element_blank()) +
+    facet_grid(.~factor(sex_fake), labeller = plot_labeller)
+}
+
+power_non_mixed <- function(tmp1) {
+  gls(gonad_fake ~ 1 + logest_fake + logest2_fake + sex_fake, weights = logest2Power, data = tmp1) # remove the year factor, simulate a single year of data.
+}
+power_mixed <- function(tmp1) {
+  power_mm_tmp1 <- lme(gonad_fake ~ 1 + logest_fake + logest2_fake + sex_fake, random = ~1 | RoSA, method = "REML", weights = logest2Power, data = tmp1) #random intercept model
+}
+```
+
+
+Now, simulate 20 data sets and analyze them. Keep it all in a tibble:
+```{r, warning=FALSE}
+set.seed(25) # for reproducibility
+sim_tibble <- tibble(
+  data_sets = lapply(1:20, function(x) gonad_data(allele_effect=0.012, pop_size=100))
+) %>%
+  mutate(plots = map(data_sets, plot_simmed_data),
+         power_M = map(data_sets, power_non_mixed),
+         power_mm = map(data_sets, power_mixed),
+         anova = map2(power_M, power_mm, .f = anova),
+         p_value = map_dbl(anova, ~ .$`p-value`[2]),
+         ranef = map(power_mm, ranef)
+         )
+```
+
+
+Now, keep the first 4 that have a p-value < 0.05 and put their plots together:
+```{r}
+signif_4 <- sim_tibble %>%
+  filter(p_value < 0.05) %>%
+  slice(1:4)
+```
+
+Let's look at the randome effect intercepts of those:
+```{r}
+signif_4$ranef
+```
+
+And the p-values:
+```{r}
+signif_4$p_value
+```
+Plot the 4 simulated data sets.
+```{r plot-the-sims}
+plot_grid(signif_4$plots[[1]],
+                     signif_4$plots[[2]],
+                     signif_4$plots[[3]],
+                     signif_4$plots[[4]], 
+                     ncol = 2)
+
+ggsave("./outputs/103.1/simulated_gonadosomatic_index_sampling_date_faceted.pdf", width=16, height = 10)
+```
+
+This plot graphically represents the difference in gonadosomatic index among EE, EL and LL genotypes that would need to be present to find a statistically significant random effect at 80% power.
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+

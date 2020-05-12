@@ -1,0 +1,216 @@
+---
+title: "Use GRIDSS to search for structural variation"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+The [GRIDSS](https://github.com/PapenfussLab/gridss) software suite is something that we might be
+able to use to find structural variants.  I am just going to try to throw the merged BAMs in as if they
+were for single individuals, since large numbers of individuals will apparently bog this down.  
+
+This is not super well documented, but let's start giving it a whirl.
+
+I am doing all this on the SEDNA cluster.
+
+# Download and "install"
+
+```sh
+# in /home/eanderson/Documents/git-repos/thompson-et-al-chinook-salmon-2020
+mkdir -p gridss
+cd gridss
+wget https://github.com/PapenfussLab/gridss/releases/download/v2.8.3/gridss-2.8.3.tar.gz
+gunzip gridss-2.8.3.tar.gz
+tar -xvf gridss-2.8.3.tar
+cd ..
+```
+
+# Index the genome with bwa
+
+```sh
+bwa index genome/Otsh_V1_genomic.fna
+```
+# Make a directory to play with this stuff, and try some things
+
+```sh
+# get 20 cores
+srun --pty -c 20 /bin/bash
+
+mkdir gridss-work-area
+cd gridss-work-area
+
+# make a configuration file for one changed option:
+echo 'useReadGroupSampleNameCategoryLabel=false' > my_config.R
+
+# load modules
+module load aligners/bwa
+module load bio/samtools
+module load R
+
+
+
+# now, try a command to launch it:
+
+../gridss/gridss.sh \
+  --reference ../genome/Otsh_V1_genomic.fna \
+  --output first-test.vcf.gz \
+  --assembly first-test.bam \
+  --threads 20 \
+  --jar ../gridss/gridss-2.8.3-gridss-jar-with-dependencies.jar \
+  --workingdir working_dir \
+  --jvmheap 25g \
+  --configuration my_config.R \
+  --labels fall,spring \
+  ../intermediates/201/merged_bams/fall.2Mb.bam \
+  ../intermediates/201/merged_bams/spring.2Mb.bam
+
+```
+
+That runs pretty quickly.  At the end, we can copy the resulting
+VCF file (first-test.vcf.gz) to `stored_results/201` to analyse on
+the laptop in R.
+
+# Onto the laptop
+
+I have the full VCF in intermediates/201.  Now, let us analyze it.
+```{r}
+library(tidyverse)
+library(vcfR)
+ftv <- read.vcfR("intermediates/201/first-test.vcf.gz")
+
+ftvt <- vcfR2tidy(ftv)
+
+
+#View(ftvt$gt)
+#View(ftvt$fix)
+
+
+```
+
+Let's get the breakend position in the ALT field and filter things down to
+only those variants that "span" the RoSA, and then arrange them by the absolute difference
+of the breakend positions from each pair, just for a quick look
+```{r}
+candidates <- ftvt$fix %>%
+  filter(CHROM == "NC_037124.1" & str_detect(ALT, "NC_037124.1")) %>%
+  mutate(ALT_POS = as.integer(str_match(ALT, ":([0-9]+)")[,2]),
+         BE_ABS_DIFF = abs(ALT_POS - POS)) %>%
+  select(ChromKey:POS, ALT_POS, BE_ABS_DIFF, everything()) %>%
+  filter(pmin(POS, ALT_POS) < 12.26e6 & pmax(POS, ALT_POS) > 12.29e6) %>%
+  arrange(desc(BE_ABS_DIFF))
+
+candidates
+```
+
+
+That shows two candidates.  The first four rows are the characteristic pattern you
+expect from breakend notation for an inversion (see [https://samtools.github.io/hts-specs/VCFv4.3.pdf](https://samtools.github.io/hts-specs/VCFv4.3.pdf)).
+In this case, it would be a ~1 Mb inversion
+spanning from 11.67 Mb to 12.61 Mb.  However, this is a Low Quality Variant with no assembly.
+Furthermore, if we look at the genotype information for the aggregated spring run and fall-run
+alignments, we don't see evidence that the variants are specific to ecotypes:
+```{r}
+One_Mb_candi <- ftvt$gt %>%
+  filter(POS %in% candidates$POS[1:4])
+One_Mb_candi
+```
+In particular, we see that there are not substantial differences between the spring-run and the
+fall-run fish in the count of read pairs spanning any of the breakends supporting the reference allele (gt_REFPAIR column).
+Likewise, similar (and very low) numbers of fragments supporting the alternate allele (i.e. an inversion)
+are observed from spring-run and fall-run fish (gt_VF column).  These records certainly do not provide
+evidence that this is an inversion fixed for different forms between spring run and fall run.
+
+The final two rows of `candidates` suggest a 387 Kb inversion from 12.17 to 12.55 Mb; however this is
+also considered a low quality variant with support from just a single assembly, and only includes half of
+the breakends expected for an inversion.  Here is the genotype information for that variant:
+```{r}
+other_candi <- ftvt$gt %>%
+  filter(POS %in% candidates$POS[5:6])
+other_candi
+```
+Investigating that we see that both spring run and fall run fish have comparable numbers of read pairs supporting
+the reference at one of the breakends (gt_REFPAIR). No fragments support the alternate allele in spring run, while 
+only four fragments support the alternate allele
+in the fall run, but the genome reference is a fall-run fish, so one would expect the spring-run fish to have the 
+inverted form.  Furthermore, an inversion from 12.17 to 12.55 Mb should suppress recombination between the
+RoSA and the distal region, but recombination has clearly occurred there.  The verdict here is that neither
+of these records provide credible support for an inversion in the region.
+
+
+
+# Try running it on indiv samples
+
+I suspect that it will not work, but let's try giving it all the springs
+and all the falls.  Basically 128 individuals, or so.  
+
+```sh
+# get 20 cores
+srun --pty -c 20 /bin/bash
+
+mkdir gridss-work-area
+cd gridss-work-area
+
+# make a configuration file for one changed option:
+echo 'useReadGroupSampleNameCategoryLabel=false' > my_config.R
+
+# load modules
+module load aligners/bwa
+module load bio/samtools
+module load R
+
+
+# get all the fall then all the spring bams
+INDIV_BAMS=$(ls -l ../intermediates/201/single_bams/fall/*.bam ../intermediates/201/single_bams/spring/*.bam | awk '{printf("%s ", $NF);}')
+
+# now, try a command to launch it:
+
+../gridss/gridss.sh \
+  --reference ../genome/Otsh_V1_genomic.fna \
+  --output as-indivs-test.vcf.gz \
+  --assembly as-indivs-test.bam \
+  --threads 20 \
+  --jar ../gridss/gridss-2.8.3-gridss-jar-with-dependencies.jar \
+  --workingdir as-indivs-working-dir \
+  --jvmheap 25g \
+  --configuration my_config.R \
+  $INDIV_BAMS
+
+```
+
+That ended up failing with a "too many files" open error.  While assembling
+Chunk 157, which included the RoSA.  However, I am satisfied with the
+analysis of the aggregated data.
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+
+# Citations
+
+
+
+
+
+

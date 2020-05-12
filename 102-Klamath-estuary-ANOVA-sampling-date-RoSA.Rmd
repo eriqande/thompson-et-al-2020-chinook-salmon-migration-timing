@@ -1,0 +1,255 @@
+---
+title: "102-Klamath-estuary-ANOVA-sampling-date-RoSA"
+author: "Neil Thompson"
+date: "Last Updated: `r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# RoSA analysis of klamath estuary using ANOVA
+
+```{r}
+library(tidyverse)
+library(car)
+```
+
+1. load RoSA data for estuary samples
+```{r load-data}
+rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
+
+klaten_nomiss <- rosa_data %>% distinct(Indiv,.keep_all=T) %>%
+  filter(!str_detect(rosa,"\\?"))
+```
+
+There are `r nrow(klaten_nomiss)` at-entry estuary samples with 100% complete genotypes. There are `r nrow(rosa_data)` Klamath at-entry estuary samples.
+
+2. load metadata for estuary samples.Join RoSA data to the metadata.
+```{r metadata-pull}
+estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
+
+rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+  dplyr::select(-ID) %>%
+  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  dplyr::select(NMFS_DNA_ID, rosa, everything())
+```
+
+Number of rosa genotypes in the data
+```{r summary-of-indivs-per-rosa-geno}
+rosa_meta %>%
+  filter(!str_detect(rosa,"\\?")) %>%
+  count(rosa)
+```
+
+
+Visualize the relationship between RoSA and sampling date
+```{r plot-relationship}
+rosa_meta %>%
+  filter(!str_detect(rosa,"\\?")) %>% 
+  mutate(rosa = factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL","HHHEEEEE","LLLLHHLL")))%>%
+ggplot(., aes(x=julian, color=rosa,fill=rosa))+
+  geom_histogram(binwidth = 1) + 
+  xlab("julian day")+
+  theme_bw()+
+  facet_grid(year~.)
+```
+
+ANOVA analysis
+```{r ANOVA}
+rosa_stats <- rosa_meta %>%
+  filter(!str_detect(rosa,"\\?"),
+         rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL")) %>% #remove samples with missing data and recombinant genotypes
+  mutate(rosa_f = factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL")),
+         year_f = factor(year, levels =c("2009","2010"))) 
+  
+
+lm1 <- lm(julian~rosa_f*year_f,rosa_stats)
+
+anova(lm1)
+```
+
+Genotype has a significant effect on sampling date, year has a statistically significant effect on sample date and there is a significant year by genotype effect.
+
+Let's look at the effect sizes
+```{r anova-effect-sizes}
+summary(lm1)
+```
+
+In 2010 the LLLLLLLL genotype arrived approximately 28 days earlier than LLLLLLLL in 2009. There was also a year effect, where in 2010 on average all fish arrive 7.5 days earlier. That isn't a big difference when we're considering a entry season of `r max(rosa_meta$julian)-min(rosa_meta$julian)` days.
+
+Checking model assumptions
+```{r model-assumptions}
+plot(lm1) #looks ok.
+eij=residuals(lm1)
+hist(eij,main="Histogram of residuals") # looks ok
+```
+
+checking homoscedasticity
+```{r homoscedasticity-check}
+rosa_stats %>%
+  group_by(rosa_f,year_f) %>%
+  summarise(mean_jul = mean(julian),
+            variance = round(var(julian),2),
+            stdev = sd(julian),
+            n_fish = n()) %>% 
+  arrange(year_f,rosa_f)
+
+rosa_stats09 <- rosa_stats %>% filter(year_f == "2009")
+leveneTest(rosa_stats09$julian ~ rosa_stats09$rosa_f) # violation of homoscedasticity
+rosa_stats10 <- rosa_stats %>% filter(year_f == "2010")
+leveneTest(rosa_stats10$julian ~ rosa_stats10$rosa_f) # no violation of homoscedasticity
+```
+
+Whats the % variance explained by the interaction?
+```{r variance-explained}
+anova1 <- anova(lm1)
+sumSq_interaction<-anova1$`Sum Sq`[3]
+sumSq_total <- sum(anova1$`Sum Sq`)
+```
+
+The interaction between year and genotype category accounts for `r sumSq_interaction/sumSq_total*100` of the total variance. This seems really small. Let's figure out what the variance % explained by year and by genotype is to compare to this.
+
+```{r variance-explained-main-effects}
+sumSq_genotype<-anova1$`Sum Sq`[1]
+sumSq_year<-anova1$`Sum Sq`[2]
+```
+
+RoSA genotype explains `r sumSq_genotype/sumSq_total*100` percent of the total variance
+
+Year explains `r sumSq_year/sumSq_total*100` percent of the total variance. 
+
+OK, so big picture here. Genotype has the strongest effect by a large margin. There is a statistically significant result of the interaction between year and genotype, but it explains very little of the total variance and does not change the overall pattern of EEEEEEEE enter first, followed by HHHHHHHH and LLLLLLLL genotypes. Also note the interaction was only significant for LLLLLLLL genotypes in 2010.
+
+# Explore influence of homoscedasticity on ANOVA result in 2009.
+
+Simulations to determine how big an issue the homoscedasticity violation is on the ANOVA result. 
+2009 had larger differences in standard deviation and sample size among RoSA genotypes so I'll start there. Using the Levene's test there was no violation of homoscedasticity in 2010. 
+```{r EvH-with-constant-n-sim-2009}
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 100, mean = 150, sd = 16.6) # represents mean and SD of EEEEEEEE RoSA in 2009
+y<-rnorm(n = 100, mean = 192, sd = 12.2) #represents mean and SD of HHHHHHHHH RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean and variance, = n", xlab=("Observed p-value"), breaks=100)
+
+#now lets say that the HHHHHHHH RoSA had equivalent SD to EEEEEEEE (increasing SD of HHHHHHHH higher than observed)
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 100, mean = 150, sd = 16.6) # represents mean and SD of EEEEEEEE RoSA in 2009
+y<-rnorm(n = 100, mean = 192, sd = 16.6) #represents mean and inflated SD of HHHHHHHHH RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean and inflated H variance, = n", xlab=("Observed p-value"), breaks=100)
+```
+
+Ok, so equal sample size among EEEEEEEE and HHHHHHHH and changing the SD of each group doesn't have any influence on the distribution of P-values.
+
+Now I'll consider changing the sample size AND variance to see how that influences the P-value distribution.
+```{r EvH-changing-n-and-sd-sim-2009}
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 100, mean = 150, sd = 16.6) # represents mean and SD of EEEEEEEE RoSA in 2009
+y<-rnorm(n = 10, mean = 192, sd = 12.2) #represents mean and SD of HHHHHHHHH RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean and variance, diff n", xlab=("Observed p-value"), breaks=100)
+
+#now lets say that the HHHHHHHH RoSA had equivalent SD to EEEEEEEE (increasing SD of HHHHHHHH higher than observed)
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 100, mean = 150, sd = 16.6) # represents mean and SD of EEEEEEEE RoSA in 2009
+y<-rnorm(n = 10, mean = 192, sd = 16.6) #represents mean, inflated SD of HHHHHHHHH RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean and increased variance, diff n", xlab=("Observed p-value"), breaks=100)
+```
+
+The distribution of P-values comparing EEEEEEEE and HHHHHHHH was not changed much at all from varying the standard deviation and the sample sizes among groups using the mean julian day of sampling.  I'm confident the violation of homoscedasticity is not influencing the significant difference in julian day among EEEEEEEE and HHHHHHHH RoSA genos in 2009 in a magnitude that we need to worry about.
+
+Now let's compare HHHHHHHH and LLLLLLLL. 
+
+```{r HvL-with-constant-n-sim-2009}
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 100, mean = 192, sd = 12.2) # represents mean and SD of HHHHHHHHH RoSA in 2009
+y<-rnorm(n = 100, mean = 264, sd = 21.4) #represents mean and SD of LLLLLLLL RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean and variance, equal n", xlab=("Observed p-value"), breaks=100)
+
+#now lets say that the HHHHHHHH RoSA had equivalent SD to LLLLLLLL (increasing SD of HHHHHHHH higher than observed)
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 100, mean = 192, sd = 21.4) # represents mean julian of HHHHHHHHH RoSA in 2009 and sd of LLLLLLLL in 2009
+y<-rnorm(n = 100, mean = 264, sd = 21.4)  #represents mean and SD of HHHHHHHHH RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean and inflated H variance, equal n", xlab=("Observed p-value"), breaks=100)
+```
+
+If HHHHHHHH and LLLLLLLL had equal sample sizes the difference in variance among the genotypes wouldn't strongly influence the mean difference in julian day.
+
+Now I'll incorporate a difference in group size AND variance.
+```{r HvL-changing-SD-and-N-with-HHHHHHHH-and-LLLLLLLL-in-2009}
+nSims <- 10000
+h0 <-numeric(nSims)
+
+for(i in 1:nSims){ 
+x<-rnorm(n = 10, mean = 192, sd = 21.4) # represents mean and n HHHHHHHHH RoSA in 2009 with SD of LLLLLLLL in 09
+y<-rnorm(n = 150, mean = 264, sd = 21.4) #represents mean, n and SD of LLLLLLLL RoSA in 2009
+z<-t.test(x,y, var.equal = T) 
+h0[i]<-z$p.value 
+}
+
+hist(h0, main="Histogram of p-values with observed mean, changed variance for H and unequal n", xlab=("Observed p-value"), breaks=100)
+```
+
+Again, the distribution of P-values is still very significant and not greatly influenced by the difference in sample size or standard deviation among RoSA genotypes.  Because the distribution of P-values doesn't appear to be greatly influenced by violations of homoscedasticity with observed sample sizes I'm confident in the results of the ANOVA. Note, the larger difference in mean julian day among EEEEEEEE and LLLLLLLL means the results shouldn't be infleunced by differences in sample size or SD. Also the EEEEEEEE and LLLLLLLL groups had the most similar n and sd in 2009.
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+

@@ -1,0 +1,29 @@
+﻿Name,reach,reach_lo,reach_hi
+Salmon River,4B,0,2.4
+Salmon River,4A,2.4,4
+Salmon River,4,0,4
+South Fork Salmon River,5A,-0.001,-3
+South Fork Salmon River,5B,-3,-5
+South Fork Salmon River,5,-0.001,-5
+South Fork Salmon River,6A,-5,-8
+South Fork Salmon River,6B,-8,-10.2
+South Fork Salmon River,6,-5,-10.2
+South Fork Salmon River,7,-10.2,-14.2
+South Fork Salmon River,8,-14.2,-18.2
+South Fork Salmon River,17,-18.2,-22.2
+South Fork Salmon River,18,-22.2,-25.2
+South Fork Salmon River,19,-25.2,-28.2
+North Fork Salmon River,9A,-0.001,-2
+North Fork Salmon River,9B,-2,-4
+North Fork Salmon River,9,-0.001,-4
+North Fork Salmon River,10A,-4,-6
+North Fork Salmon River,10B,-6,-8
+North Fork Salmon River,10,-4,-8
+North Fork Salmon River,11A,-8,-10
+North Fork Salmon River,11B,-10,-12
+North Fork Salmon River,11,-8,-12
+North Fork Salmon River,12,-12,-16
+North Fork Salmon River,13,-16,-20
+North Fork Salmon River,14,-20,-22.5
+North Fork Salmon River,15,-22.5,-25.5
+North Fork Salmon River,16,-25.5,-28.5

@@ -1,0 +1,952 @@
+---
+title: "Absolute Value of Alle Freq Diff between Early and Late Running Fish"
+biblio-style: apalike
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+Here we compute the absolute value of the allele freq difference between spring and fall
+run fish over all the assembled chromosomes (and preliminarily in all the scaffolds > 5 Mb, though
+these were not retained for the final figure).  In this notebook we also do the same over
+the 5.16 Mb around GREB1L and create plots.
+
+
+# Computing the allele frequencies across the whole genome
+
+## Packages and paths 
+```{r, message=FALSE}
+library(tidyverse)
+library(viridis)
+dir.create("outputs/002", recursive = TRUE, showWarnings = FALSE)
+dir.create("intermediates/002", recursive = TRUE, showWarnings = FALSE)
+```
+
+## Text files with names of fall-run and spring-run fish
+
+We do this in R.
+```{r}
+pmeta <- read_csv("data/wgs-chinook-samples.csv")
+
+# get file with fall-run names in it
+pmeta %>%
+  filter(run_type == "Fall") %>%
+  .$vcf_name %>%
+  cat(., file = "intermediates/002/fall-run.txt", sep = "\n")
+
+# get file with spring-run names in it
+pmeta %>%
+  filter(run_type == "Spring") %>%
+  .$vcf_name %>%
+  cat(., file = "intermediates/002/spring-run.txt", sep = "\n")
+```
+
+
+## Creating VCF files of fall or spring on Hoffman
+
+I copied the results from the previous section to the cluster's scratch:
+```
+/u/flashscratch/e/eriq/abs-diff-alle-freq/inputs/fall-run.txt
+/u/flashscratch/e/eriq/abs-diff-alle-freq/inputs/spring-run.txt
+```
+Now we just need to use those to subset the vcf files. We will use
+vcftools. This assumes a directory `vcf` that includes all the vcf files.
+```sh
+# in: /u/flashscratch/e/eriq/abs-diff-alle-freq
+mkdir subsetted-vcfs
+ls ~/nobackup-kruegg/chinook-wgs/vcf/*.gz > vcflist.txt
+
+#here is what that looks like:
+head vcflist.txt 
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037097.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037098.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037099.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037100.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037101.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037102.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037103.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037104.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037105.1.vcf.gz
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/vcf/NC_037106.1.vcf.gz
+
+# now we make a job list for these:
+awk '{printf("%d\tfall-run\t%s\n", ++n, $1); printf("%d\tspring-run\t%s\n", ++n, $1);}' vcflist.txt > job_list.txt 
+
+```
+And now a quick shell script to run this as a job array:
+```sh
+#!/bin/bash
+#$ -cwd
+#$ -V
+#$ -N bvcf
+#$ -o bvcf-$TASK_ID.log
+#$ -e bvcf-$TASK_ID.error
+#$ -l h_data=4G,time=1:00:00
+#$ -M eric.anderson@noaa.gov
+#$ -t 1-3:1
+#$ -m a
+
+
+source /u/local/Modules/default/init/modules.sh
+module load vcftools
+
+
+
+# get the relevant line from the id file and store as a bash array,
+# then get the necessary parts of it
+IDFILE=job_list.txt
+
+# get it as an array of three things
+LINE=($(awk -v N=$SGE_TASK_ID '$1==N {print}' $IDFILE))
+
+# then break out what we need
+ecotype=${LINE[1]}
+vcf=${LINE[2]}
+b=$(basename $vcf)
+f=${b/.vcf.gz/}
+
+vcftools --gzvcf $vcf --keep inputs/$ecotype.txt --out subsetted-vcfs/${ecotype}-$f --recode 
+
+sleep 180
+
+```
+And we launch that like this:
+```sh
+qsub  split-vcfs-job-array.sh 
+```
+
+That got through everything pretty quickly.
+
+## Running ANGSD on each VCF file
+
+Let's make a file list for jobs and an output directory
+```sh
+ls -l subsetted-vcfs/*.vcf | awk '{printf("%d\t%s\n", ++n, $NF)}' > angsd_jobs.txt 
+
+mkdir angsd_outputs
+```
+
+Then a quick job array:
+```sh
+#!/bin/bash
+#$ -cwd
+#$ -V
+#$ -N aaf
+#$ -o aaf-$TASK_ID.log
+#$ -e aaf-$TASK_ID.error
+#$ -l h_data=4G,time=1:00:00
+#$ -M eric.anderson@noaa.gov
+#$ -t 1-3:1
+#$ -m a
+
+
+source /u/local/Modules/default/init/modules.sh
+
+
+
+# get the relevant line from the id file and store as a bash array,
+# then get the necessary parts of it
+IDFILE=angsd_jobs.txt
+
+# get it as an array of three things
+LINE=($(awk -v N=$SGE_TASK_ID '$1==N {print}' $IDFILE))
+
+# then break out what we need
+vcf=${LINE[1]}
+b=$(basename $vcf)
+f=${b/.recode.vcf/}
+
+FAI=/u/home/e/eriq/nobackup-kruegg/chinook-wgs/genome/Otsh_v1.0_genomic.fna.fai
+
+angsd -vcf-gl $vcf -fai $FAI -nind 64 -domaf 3 -out angsd_outputs/$f > angsd_outputs/$f.stdout 2> angsd_outputs/$f.stderr
+
+
+sleep 180
+
+```
+
+Launch that:
+```sh
+qsub angsd_array.sh
+```
+
+That finished pretty quickly.  
+
+# Filtering, alle freq diffs, and plotting
+
+First, get all the mafs.gz files over to my laptop. I put them all into:
+```
+/Users/eriq/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring
+```
+Anyone reproducing this will have to adjust their paths accordingly.
+
+Now, our strategy is to read the spring run and the fall run separately, and filter each
+on the read depth requirement, separately.  Then we will do an inner join of all those.
+
+Get the spring run:
+```{r}
+spring_files <- dir(path = "~/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring",
+                    pattern = "spring-run",
+                    full.names = TRUE)
+
+spring_freqs <- lapply(spring_files, function(x) {
+  read_tsv(x) %>%
+    filter(nInd >= 30)
+}) %>%
+  bind_rows()
+```
+
+Then get the fall run:
+```{r}
+fall_files <- dir(path = "~/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring",
+                    pattern = "fall-run",
+                    full.names = TRUE)
+
+fall_freqs <- lapply(fall_files, function(x) {
+  read_tsv(x) %>%
+    filter(nInd >= 30)
+}) %>%
+  bind_rows()
+```
+Now we do the inner join:
+```{r}
+spring_fall <- inner_join(
+  fall_freqs, 
+  spring_freqs, 
+  by = c("chromo", "position"), 
+  suffix = c("_fall", "_spring")) %>% 
+  mutate(
+    ave_freq = (unknownEM_fall + unknownEM_spring) / 2, 
+    abs_diff = abs(unknownEM_fall - unknownEM_spring)
+  ) 
+```
+And it is quite straightforward from here. Note that we have 9,170,403 SNPs here.
+
+## Hexbin plot
+First, we are going to make a 2-D histogram of average allele freq vs absolute difference.
+```{r}
+g <- ggplot(spring_fall, aes(x = ave_freq, y = abs_diff)) +
+  geom_hex(binwidth = 0.001) +
+  scale_fill_viridis_c()
+
+g
+```
+
+So, that gives us some good guidance for choosing an abs_diff cutoff to ease the plotting. Like
+0.3 or 0.375 might be good.
+
+But, let's see how many SNPs have abs_diff > 0.2, 0.25, 0.3?
+```{r}
+pts <- c(0.2, 0.25, 0.3, 0.35, 0.375)
+names(pts) <- pts
+lapply(pts, function(x) sum(spring_fall$abs_diff > x))
+```
+
+So, 0.25 is probably a decent cutoff to keep the figure file size down, but also retain
+most of the information.  Let's make a manhattan plot of that.
+
+## "Manhattan" plot
+
+I have some code for this, but need the chromosome lengths:
+We need to get the chromosome lengths for all of these.  We can pull those out of the
+VCF file.
+```{sh}
+(echo "Chromosome chrom_length"; gunzip -c data/greb1l-ish-region.vcf.gz 2> /dev/null | awk -F"=" '/^##contig/ {print $3, $4} !/^#/ {exit}' | sed 's/,length//g; s/>//g;') > intermediates/002/chrom_lengths.txt
+```
+
+Now, filter down to abs_diff > 0.25, and get the chrom_lengths
+```{r}
+sf_lite <- spring_fall %>%
+  filter(abs_diff > 0.25) %>%
+  rename(Chromosome = chromo)
+
+chrom_lengths <- read_table2("intermediates/002/chrom_lengths.txt")
+```
+
+Now, my function to make the plot. This website [https://www.r-graph-gallery.com/wp-content/uploads/2018/02/Manhattan_plot_in_R.html](https://www.r-graph-gallery.com/wp-content/uploads/2018/02/Manhattan_plot_in_R.html) had a nice discussion of it. We've store
+two functions in `R/`: `my_mh_prep` and `plot_mh` and source them here: 
+```{r}
+source("R/manhattan_plot_funcs.R")
+```
+
+Now, use those funcs:
+```{r}
+sf_prepped <- my_mh_prep(sf_lite, chrom_lengths)
+
+mh_plot <- plot_mh(sf_prepped$snps, sf_prepped$axisdf) +
+  xlab("Position along chromosome") +
+  ylab("Absolute value of allele frequency difference, spring-run vs. fall-run")
+
+#ggsave(mh_plot, filename = "outputs/002/abs-diff-alle-freq-manhattan.pdf", width = 12, height = 8)
+mh_plot
+```
+
+# Patching some holes
+
+Looking at that plot, it is clear that there is a big chunk missing out of NC_037105.1 in the middle of the
+chromosome, and also at the right hand end of it.  There is also a big chunk missing from NC_037106.1.
+Interestingly, the gap in the middle of NC_037105.1 shows up in a previous association study I did directly from
+the bams.  But not the gap at the end of NC_037105.1, nor on NC_037106.1.  Something must have gone
+awry with GATK in those regions.  So, we will go back to the bams to fill those spots.
+
+Let's look at which areas we are missing here
+```{r}
+spring_fall %>%
+  group_by(chromo) %>%
+  summarise(min = min(position),
+            max = max(position)) %>%
+  left_join(chrom_lengths, by = c("chromo" = "Chromosome"))
+```
+
+Yeah, 106.1 is missing something like 35 Mb of stuff in it.  I don't see clear evidence that
+everything is missing at the end of 105.1, though.  
+
+Let's have a look at those chromosomes and snp density:
+```{r}
+sf_lite %>%
+  filter(Chromosome %in% c("NC_037105.1", "NC_037106.1") ) %>%
+  ggplot(., aes(x = position, y = abs_diff)) + 
+  geom_point(alpha = 0.2) +
+  facet_wrap(~ Chromosome, scales = "free", ncol = 1) +
+  scale_x_continuous(breaks = (1:10) * 1e7)
+```
+
+However the bams all seem to have plenty of alignments in
+places where there are no SNPs:
+```sh
+2019-04-01 22:59 /chinook_WGS_processed_large_contigs/--% pwd
+/Volumes/KanaloaEXTRA/chinook_WGS_processed_large_contigs
+2019-04-01 23:04 /chinook_WGS_processed_large_contigs/--% for i in *.bam; do echo -n "$i  ";  samtools view $i  NC_037105.1:40000000-60000000 | wc; done 
+DPCh_plate1_A01_S1.rmdup.bam     64331 1058220 30255186
+DPCh_plate1_A02_S2.rmdup.bam    147407 2426280 69154811
+DPCh_plate1_A03_S3.rmdup.bam     24809  407627 11701193
+DPCh_plate1_A04_S4.rmdup.bam     28937  475422 13613302
+DPCh_plate1_A05_S5.rmdup.bam    102850 1692399 48234066
+DPCh_plate1_A06_S6.rmdup.bam     57725  949480 27093163
+DPCh_plate1_A07_S7.rmdup.bam    126506 2081428 59374228
+DPCh_plate1_A08_S8.rmdup.bam    135176 2223432 63340986
+
+```
+So, there are very clearly alignments all along there in the BAMS.  I shall
+call SNPs on those locations from those BAMS, and I will estimate alle freqs
+there using ANGSD, to fill in the holes.
+
+In fact I will be a little more general, and see if there were any other
+"holes" in the VCF that we can fill by re-running those sections with
+just the BAMS in Angsd.
+
+## First, find the holes
+
+We are going to focus only on the chromosomes (none of the NW_ segments).  I am going to find
+any 100 Kb sections that lack any SNPs at all in spring_fall, and then I will merge those
+all into contiguous pieces, and then extract those from the bams, and then just do allele
+frequency estimation with ANGSD on those piecemeal BAMS.  
+
+We will chop each chromosome up into
+1 Mb sections with `cut`.  We cut them all with the same intervals that will
+accommodate the longest chromosome.  Then we will filter that stuff later.  We aren't
+going to worry much about the ends.
+```{r}
+longest <- max(chrom_lengths$chrom_length)
+breaks <- c(seq(1, longest, by = 1000000), longest)
+labs <- sprintf("%d-%d", breaks, breaks + 999999)   #, sprintf("%09d-%09d", max(breaks) + 99999, longest))
+labs <- labs[-length(labs)]
+
+intvls <- spring_fall %>%
+  rename(Chromosome = chromo) %>%
+  select(Chromosome, position) %>%
+  mutate(interval = cut(position, breaks = breaks, labels = labs)) %>%
+  count(Chromosome, interval, .drop = FALSE) %>%
+  mutate(interval = as.character(interval)) %>%
+  separate(interval, into = c("lo", "hi"), sep = "-", remove = FALSE, convert = TRUE) %>%
+  left_join(., chrom_lengths, by = "Chromosome") %>%
+  filter(lo < chrom_length) %>%
+  filter(str_detect(Chromosome, "^NC_"))
+
+
+```
+
+At this juncture we write a little function that will give integer indexes to contiguous 
+runs using rle (run-length-encoding).
+```{r}
+#' @param v a logical vector
+contig_groups <- function(v) {
+  rl <- rle(v)
+  idx <- 1:length(rl$values)
+  rep(idx, rl$lengths)
+}
+```
+
+```{r}
+
+redo_from_bams <- intvls %>%
+  arrange(Chromosome, lo) %>%
+  mutate(cgroup = contig_groups(n)) %>%
+  filter(n == 0) %>% 
+  group_by(Chromosome, cgroup) %>%
+  summarise(lo = min(lo),
+            hi = max(hi),
+            length = hi - lo + 1)
+
+# and now all we need to do is print a string of regions to pick out of the bams:
+bamstr <- redo_from_bams %>%
+  mutate(region = sprintf("%s:%d-%d", Chromosome, lo, hi))
+
+# here is what it looks like
+cat(bamstr$region, sep = " ")
+  
+# here is where we put it into a file:
+cat(bamstr$region, sep = " ", file = "intermediates/002/reg_str_file.txt")
+```
+
+So, that will be picking about 100 Mb out of the bams. 
+
+## Slurp those 1 Mb holey parts out of the bams
+
+Doing this on my laptop, pulling them off KanaloaExtra drive, putting them
+into /tmp, and then I will stuff them up to Hoffman.
+
+```sh
+/chinook-wgs/--% (master) 
+for i in /Volumes/KanaloaEXTRA/chinook_WGS_processed_large_contigs/*.bam; do 
+  j=$(basename $i); 
+  echo $i;
+  samtools view -b -1 $i $(cat intermediates/002/reg_str_file.txt) > /tmp/bam-holes/$j;  
+done 
+```
+I copied that all to flashscratch on hoffman.  
+
+## Run ANGSD
+
+I will do this in: 
+/u/flashscratch/e/eriq/bam-holes
+
+```sh
+# first, get the spring and fall run lists
+/bam-holes/--% cat ../abs-diff-alle-freq/inputs/fall-run.txt | awk '{print "../full-wgs-chinook-data/bams/" $1 ".rmdup.bam"}' > inputs/fall-run-bamlist.txt
+/bam-holes/--% cat ../abs-diff-alle-freq/inputs/spring-run.txt | awk '{print "../full-wgs-chinook-data/bams/" $1 ".rmdup.bam"}' > inputs/spring-run-bamlist.txt
+
+# note that I put the bams into full-chinook-data/bams, but they are just the 100 Mb or so 
+# of the gaps
+
+# and then we just need an ANGSD command line for each:
+angsd -out out -doMajorMinor 1 -doMaf 3 -bam inputs/fall-run-bamlist.txt  -GL 1 -SNP_pval 1e-6 -minInd 30
+
+# that appears to be working just fine, but is pretty darn slow.
+# I shall job-array it over 1 Mb chunks...
+
+# that means i need to index the bams...done
+```
+
+Now, get a file with 1 Mb regions to process in a job array
+```{r}
+intvls %>%
+  filter(n == 0) %>%
+  mutate(angsd_job_str = str_c(1:n(), "\t", Chromosome, ":", lo, "-", hi)) %>%
+  .$angsd_job_str %>%
+  cat(., sep = "\n", file = "intermediates/002/bam-hole-regions.txt")
+```
+
+Then I put spring and fall on there:
+```sh
+
+```
+Then I put that on hoffman.
+
+And now we can make a job array script to run those:
+```sh
+#!/bin/bash
+#$ -cwd
+#$ -V
+#$ -N bamhole
+#$ -o bamhole-$TASK_ID.log
+#$ -e bamhole-$TASK_ID.error
+#$ -l h_data=8G,time=24:00:00
+#$ -M eric.anderson@noaa.gov
+#$ -t 1-3:1
+#$ -m a
+
+
+
+
+# get the relevant line from the id file and store as a bash array,
+# then get the necessary parts of it
+IDFILE=inputs/bh-spring-fall-comms.txt
+
+# get it as an array of three things
+LINE=($(awk -v N=$SGE_TASK_ID '$1==N {print}' $IDFILE))
+
+# then break out what we need
+region=${LINE[1]}
+run=${LINE[2]}
+jobnum=$(printf "%04d" $SGE_TASK_ID)
+f=${run}_job_$jobnum.${region/:/_}
+
+mkdir -p angsd_outputs
+
+angsd -out angsd_outputs/$f -doMajorMinor 1 -doMaf 3 -bam inputs/${run}-run-bamlist.txt \
+  -r $region -GL 1 -SNP_pval 1e-6 \
+  -minInd 30 > angsd_outputs/$f.stdout 2> angsd_outputs/$f.stderr
+
+
+sleep 180
+
+```
+Then launch those:
+```sh
+/bam-holes/--% qsub bam-hole-job-array.sh 
+Your job-array 679949.1-4:1 ("bamhole") has been submitted
+/bam-holes/--% qsub bam-hole-job-array.sh 
+Your job-array 679953.5-238:1 ("bamhole") has been submitted
+```
+
+Those all ran to completion overnight, and now I will put the mafs.gz files into outputs. They
+are locally in `~/Documents/git-repos/chinook-wgs/outputs/317/angsd_outputs` and take up 80 Mb.
+Other users will need to modify the paths as appropriate.
+
+## Read results into R and process
+
+1. Read in all the results into a single data frame
+```{r}
+files <- dir(path = "~/Documents/git-repos/chinook-wgs/outputs/317/angsd_outputs", full.names = TRUE)
+ecotype <- ifelse(str_detect(files, "spring"), "spring", "fall")
+
+angsd_bam_hole_freqs <- lapply(seq_along(files), function(i) {
+  fin <- files[i]
+  read_tsv(fin) %>%
+    mutate(ecotype = ecotype[i])
+}) %>% bind_rows()
+```
+Note that this already has nInd >= 30.
+
+2. Split into fall and spring and then do a full_join to see how many SNPs are found
+only in one ecotype
+```{r}
+bf_spring <- angsd_bam_hole_freqs %>%
+  filter(ecotype == "spring")
+bf_fall <- angsd_bam_hole_freqs %>%
+  filter(ecotype == "fall")
+
+full_comp <- bf_fall %>%
+  full_join(bf_spring, by = c("chromo", "position"), suffix = c("_fall", "_spring"))
+```
+
+3. Quickly see if there is anything that did now show up in fall (say) that was at high frequency in spring,
+and vice versa
+```{r}
+tmp <- full_comp %>% 
+  filter(xor(is.na(unknownEM_fall), is.na(unknownEM_spring)))
+
+# plot histogram of spring freqs for variants absent in fall
+ggplot(tmp %>% filter(is.na(unknownEM_fall)), aes(x = unknownEM_spring)) +
+  geom_histogram(binwidth = 0.01)
+
+# and confirm that
+tmp %>%
+  filter(is.na(unknownEM_fall)) %>%
+  arrange(desc(unknownEM_spring)) %>%
+  head()
+
+# nothing near fixation
+
+# plot histogram of fall freqs for variants absent in spring
+ggplot(tmp %>% filter(is.na(unknownEM_spring)), aes(x = unknownEM_fall)) +
+  geom_histogram(binwidth = 0.01)
+
+# check top of that list
+tmp %>%
+  filter(is.na(unknownEM_spring)) %>%
+  arrange(desc(unknownEM_fall)) %>%
+  head()
+```
+
+ANGSD remains a little mysterious about how it identifies minor alleles, but in previous tests it did REF and ALT consistently.
+
+Let's inner join these and only compare things that were found in both.  
+```{r}
+# join them and then
+# get just the columns that are common to sf_lite
+inner_comp <- bf_fall %>%
+  inner_join(bf_spring, by = c("chromo", "position"), suffix = c("_fall", "_spring")) %>%
+  mutate(
+    ave_freq = (unknownEM_fall + unknownEM_spring) / 2, 
+    abs_diff = abs(unknownEM_fall - unknownEM_spring)
+  ) %>%
+  rename(Chromosome = chromo) %>%
+  .[names(sf_lite)] %>%
+  mutate(source = "bam")
+
+# If we have a value from angsd that we already have from the VCF, then use the VCF one,
+# but, of course we shouldn't have any of those...
+sf_av_lite <- inner_comp %>%
+  anti_join(., sf_lite, by = c("Chromosome", "position")) %>%
+  filter(abs_diff >= 0.2) %>%  # keep only these
+  bind_rows(., sf_lite %>% mutate(source = "vcf")) %>%
+  arrange(Chromosome, position)
+
+
+  
+```
+
+Now we should be able to make the Manhattan plot:
+```{r}
+sf_av_prepped <- my_mh_prep(sf_av_lite, chrom_lengths)
+
+mh_av_plot <- plot_mh(sf_av_prepped$snps, sf_av_prepped$axisdf) +
+  xlab("Position along chromosome") +
+  ylab("Absolute value of allele frequency difference, spring-run vs. fall-run")
+
+mh_av_plot
+```
+
+So, there is still a big gap on 105.  Let's explore this:
+```{r}
+sf_av_lite %>%
+  filter(Chromosome == "NC_037105.1") %>%
+  ggplot(aes(x = position)) +
+  geom_histogram(binwidth = 1000000)
+
+```
+
+What about the raw unfiltered stuff from spring and fall?
+```{r}
+bf_spring %>%
+  filter(chromo == "NC_037105.1") %>%
+  ggplot(aes(x = position)) +
+  geom_histogram(binwidth = 1000000) +
+  ggtitle("spring")
+
+bf_fall %>%
+  filter(chromo == "NC_037105.1") %>%
+  ggplot(aes(x = position)) +
+  geom_histogram(binwidth = 1000000) +
+  ggtitle("fall")
+```
+
+So, we didn't pick up any new stuff int the 43 Mb and 53 Mb area.  So, I think there just
+is something difficult going on there.  Perhaps it is a centromere or something.  Even on human 
+GWAS manhattan plots there are some comparable gaps, so I am going to leave it.
+
+# Making the final plot
+
+I have to rename the chromosomes appropriately.  Gonna just pull the table off the NCBI page:
+```{r}
+chrom_name_tib <- read_tsv("data/chromosome-name-demangle.txt") %>%
+  mutate(chrom_num = as.integer(str_replace_all(molecule_name, "Chromosome ", ""))) %>%
+  rename(cluster = RefSeq_sequence) %>%
+  select(cluster, chrom_num)
+  
+
+sf_av_renamed <- sf_av_prepped
+sf_av_renamed$axisdf <- sf_av_renamed$axisdf %>%
+  left_join(chrom_name_tib, by = c("cluster")) %>%
+  mutate(cluster = chrom_num) %>%
+  select(-chrom_num) %>%
+  filter(!is.na(cluster))
+
+sf_av_renamed$snps <- sf_av_renamed$snps %>%
+  filter(str_detect(Chromosome, "^NC"))
+  
+
+mh_avr_plot <- plot_mh(sf_av_renamed$snps, sf_av_renamed$axisdf) +
+  xlab("Position on numbered chromosomes") +
+  ylab("Absolute value of allele frequency difference, spring-run vs. fall-run") +
+  scale_y_continuous(limits = c(0.25, 1.01), expand = c(0, 0))
+
+
+mh_avr_plot
+```
+
+Now, I am going to save the object so I can reproduce the plot again more easily if need be.
+```{r}
+write_rds(mh_avr_plot, path = "outputs/002/mh_avr_plot.rds", compress = "xz")
+```
+
+
+
+# Calculate allele frequency differences in the GREB1L region
+
+We do this separately from a small part of the VCF file (included in the repo, here)
+to do it between fall run and spring and also between fall run and spring + winter run.
+
+## Pulling stuff out of the VCF around GREB1L
+
+We grabbed 
+about 5.165 Mb worth of genome out of the Chromosome 28 VCF:
+```sh
+vcftools --gzvcf NC_037124.1.vcf.gz --out grebby.vcf --chr NC_037124.1  --from-bp 9660000 --to-bp 14825000 --recode
+```
+To keep repository size down, we have bgzipped and indexed the results
+and saved them into: `./data/greb1l-ish-region.vcf.gz`
+
+## Create files of different run types for ANGSD
+
+Now, just make text files with all the spring or all the falls in there
+```{r}
+meta <- read_csv("data/wgs-chinook-samples.csv")
+meta %>%
+  filter(run_type == "Spring") %>%
+  .$vcf_name %>%
+  cat(., sep = "\n", file = "intermediates/002/springers.txt")
+
+meta %>%
+  filter(run_type == "Fall") %>%
+  .$vcf_name %>%
+  cat(., sep = "\n", file = "intermediates/002/falls.txt")
+
+# let's do it for winter run too
+meta %>%
+  filter(run_type == "Winter" | run_type == "Spring") %>%
+  .$vcf_name %>%
+  cat(., sep = "\n", file = "intermediates/002/spring-winters.txt")
+
+```
+
+## Making a vcf for falls and one for springers
+
+Done quickly with bcftools
+```{sh}
+bcftools view -S intermediates/002/springers.txt data/greb1l-ish-region.vcf.gz -Oz > intermediates/002/spring-fish.vcf.gz
+bcftools view -S intermediates/002/falls.txt data/greb1l-ish-region.vcf.gz -Oz > intermediates/002/fall-fish.vcf.gz
+bcftools view -S intermediates/002/spring-winters.txt data/greb1l-ish-region.vcf.gz -Oz > intermediates/002/spring-winter-fish.vcf.gz
+```
+
+## Running in ANGSD
+
+Run as configured for your own system on the VCF files created above.
+```{sh}
+cd intermediates/002
+angsd -vcf-gl spring-fish.vcf.gz -fai ../../genome/Otsh_v1.0_genomic.fna.fai -nind 64 -domaf 3 -out springs 2> springs.redirect.stderr
+angsd -vcf-gl fall-fish.vcf.gz -fai ../../genome/Otsh_v1.0_genomic.fna.fai -nind 64 -domaf 3 -out falls 2> falls.redirect.stderr
+angsd -vcf-gl spring-winter-fish.vcf.gz -fai ../../genome/Otsh_v1.0_genomic.fna.fai -nind 80 -domaf 3 -out spring-winters 2> spring-winters.redirect.stderr
+```
+Then copy the mafs.gz outfiles back to laptop and we have a look into
+`outputs/002`
+
+## Computing allele frequency differences 
+
+```{r}
+fallmaf <- read_tsv("intermediates/002/falls.mafs.gz")
+springmaf <- read_tsv("intermediates/002/springs.mafs.gz")
+spring_wintmaf <- read_tsv("intermediates/002/spring-winters.mafs.gz")
+```
+
+
+### Spring vs Fall
+
+```{r}
+# merge the spring and the fall here, and filter so that we have 30 individuals in each
+everyone_moiged <- left_join(fallmaf, springmaf, by = c("chromo", "position")) %>%
+  mutate(abs_diff = abs(knownEM.y - knownEM.x),
+         diff_ge_98 = abs_diff > 0.98) %>%
+  mutate(`diff > 0.98` = diff_ge_98)
+
+# then filter it down so that we only keep ones that have enough
+# individuals that were successfully genotyped
+moiged <- everyone_moiged %>%
+  filter(nInd.x >= 30 & nInd.y >= 30)
+
+# now .x = fall and .y = spring  
+# it turns out that major and minor line up with both data sets
+```
+
+
+
+### Spring + winter vs Fall
+
+```{r}
+# merge the spring-winter and the fall here, and filter so that we have 30 individuals in each
+moiged2 <- left_join(fallmaf, spring_wintmaf, by = c("chromo", "position")) %>%
+  mutate(abs_diff = abs(knownEM.y - knownEM.x),
+         diff_ge_98 = abs_diff > 0.98) %>%
+  filter(nInd.x >= 30 & nInd.y >= 38) %>%
+  mutate(`diff > 0.98` = diff_ge_98)
+
+```
+
+## Make a figure for the paper
+
+### A brief interlude in which we get the positions of exons in GREB1L and ROCK1
+
+Now, let's add the exons in GREB1L and ROCK1 from the GFF to this region.
+```{sh}
+# make a bed file that will pick out the span from GREB1L and ROCK1
+echo "NC_037124.1 12230325 12424394" | awk '{printf("%s\t%s\t%s\n", $1, $2, $3);}' > intermediates/002/greb-rock.bed
+
+# extract that region from the GFF
+bedtools intersect -a ~/Documents/UnsyncedData/Otsh_v1.0/GCF_002872995.1_Otsh_v1.0_genomic.gff.gz -b intermediates/002/greb-rock.bed > intermediates/002/greb-rock.gff
+```
+
+Now, read that in and play with it:
+```{r}
+# read em in
+gff <- read_tsv("intermediates/002/greb-rock.gff", col_names = FALSE) %>%
+  setNames(c("chrom",
+             "source",
+             "what",
+             "start",
+             "stop",
+             "X1", "X2", "X3",
+             "keyvals"
+             ))
+
+# expand the keyvals
+gff_exp <- ecaRbioinf::separate_key_value_pairs(gff, "keyvals")
+```
+
+Now, we will filter that down to only exons and CDS and then we will
+categorize each as GREB1L or ROCK1, and we will toss columns that we won't need.
+```{r}
+exocds <- gff_exp %>%
+  filter(what %in% c("exon", "CDS")) %>%
+  mutate(gene = case_when(
+    str_detect(product, "^GREB1") ~ "GREB1L",
+    str_detect(product, "^rho") ~ "ROCK1",
+    TRUE ~ NA_character_
+  )) %>%
+  select(what, start, stop, gene) %>%
+  mutate(y = ifelse(what == "exon", 1, 2))
+```
+
+Keep the exons.
+```{r}
+exons <- exocds %>%
+  filter(what == "exon") %>%
+  mutate(start_mb = start / 1e06,
+         stop_mb = stop / 1e06)
+
+greb <- exons %>%
+  filter(gene == "GREB1L") %>%
+  summarise(min = min(start_mb),
+            max = max(stop_mb))
+rock <- exons %>%
+  filter(gene == "ROCK1") %>%
+  summarise(min = min(start_mb),
+            max = max(stop_mb))
+
+# I am going to spooge these out in case they can be used later
+save(exons, greb, rock, file = "outputs/002/exons-greb-rock.rda")
+```
+
+
+### Back to making the plot
+
+
+```{r}
+fdiffs <- bind_rows(
+  `Spring-run vs Fall-run` = moiged,
+  `Winter-run + Spring-run vs Fall-run` = moiged2,
+  .id = "comparison"
+)
+
+# get the nearly fixed ones so that we can plot them on top to make sure
+# they show up well.
+fdiffs_fixed <- fdiffs %>% filter(`diff > 0.98` == TRUE)
+
+```
+
+
+We also plot the locations of GREB1L and ROCK1 on there too.
+```{r}
+# do this to get it on just the bottom facet
+exons$comparison <- "Winter-run + Spring-run vs Fall-run"
+
+# now prepare a data frame to put the gene extents on the bottom facet only
+genes <- tibble(
+  text = c("GREB1L", "ROCK1"),
+  min = c(greb$min, rock$min),
+  max = c(greb$max, rock$max),
+  comparison = "Winter-run + Spring-run vs Fall-run",
+  hjust = c(1, 0),
+  text_x = c(greb$min - 0.005, rock$max + 0.005)
+)
+
+svf_ad_for_paper <- ggplot() + 
+  annotate("rect", xmin = 12.26, xmax = 12.29, ymin = -Inf, ymax = Inf, fill = "pink", alpha = 0.6) +
+  facet_wrap(~ comparison, ncol = 1, scales = "free_y") +
+  geom_point(data = fdiffs, 
+             mapping = aes(x = position / 1e06, y = abs_diff, colour = `diff > 0.98`,
+                                       alpha = `diff > 0.98`),
+             size = 0.9) +
+  geom_rect(data = exons,
+            mapping = aes(xmin = start_mb, xmax = stop_mb, ymin = -0.20, ymax = -0.04),
+            fill = "darkviolet") +
+  ylab("Absolute allele frequency difference,\nspring-run vs. fall-run") +
+  xlab("Position on Chromosome 28 (Mb)") +
+  theme_bw() +
+  scale_color_manual(values = c("gray", "black")) +
+  scale_alpha_manual(values = c(0.3, 1.0)) +
+  geom_point(data = fdiffs_fixed, 
+             mapping = aes(x = position / 1e06, y = abs_diff, colour = `diff > 0.98`,
+                                       alpha = `diff > 0.98`),
+             colour = "black", alpha = 1.0, size = 0.9) + # plot the black ones on top
+  guides(color = guide_legend(title = "Frequency difference\ngreater than 0.98"),
+         alpha = FALSE) +
+  scale_x_continuous(breaks = seq(11.6, 12.9, by = 0.1), limits = c(11.6, 12.9)) +
+  geom_hline(yintercept = 0) +
+  scale_y_continuous(labels = c("0.00", "0.25", "0.50", "0.75", "1.00"), breaks = c(0.00, 0.25, 0.50, 0.75, 1.00)) +
+  theme(legend.position = "none") +
+  theme(strip.background = element_blank(),
+        panel.border = element_rect(colour = "black")) +
+  geom_segment(data = genes, aes(x = min, xend = max), y = -0.12, yend = -0.12, colour = "darkviolet", size = 1.5) +
+  geom_text(data = genes, aes(label = text, x = text_x, hjust = hjust), y = -0.12, vjust = 0.5, size = 3.2)
+  
+# now, save the plot for later
+write_rds(svf_ad_for_paper, path = "outputs/002/ggplot_svf_ad_for_paper.rds", compress = "xz")
+
+svf_ad_for_paper
+```
+
+
+
+# Make the final figure for the paper with and A and a B
+
+```{r}
+mh_avr_plot <- read_rds("outputs/002/mh_avr_plot.rds")
+
+mh_avr_plot_squat <- mh_avr_plot +
+  ylab("Absolute allele\nfrequency difference,\nspring- vs. fall-run") +
+  theme(axis.text.x = element_text(size = 7))
+
+# get the zoomed in one, too
+svf_ad_for_paper <- read_rds(path = "outputs/002/ggplot_svf_ad_for_paper.rds") +
+  ylab("Absolute allele\nfrequency difference") +
+  guides(color = guide_legend(title = "Difference\n  > 0.98"),
+         alpha = FALSE)
+
+library(cowplot)
+
+figure_2 <- plot_grid(mh_avr_plot_squat, 
+                      svf_ad_for_paper, 
+                      nrow = 2, 
+                      labels = c("A", "B"), rel_heights = c(.4, .6))
+
+ggsave(figure_2, filename = "outputs/002/allele-frequencies.pdf", height = 6, width = 7)
+ggsave(figure_2, filename = "outputs/002/allele-frequencies.png", height = 6, width = 7)
+
+```
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+
+# Citations
+

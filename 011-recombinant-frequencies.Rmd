@@ -1,0 +1,314 @@
+---
+title: "Distal-RoSA Recombinant Frequencies"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+
+Calculate the frequency of haplotypes that are recombinant or non-recombinant
+between the RoSA and the distal assays from @princeEvolutionaryBasisPremature2017.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+
+# Packages and paths
+
+```{r}
+library(tidyverse)
+library(parallel)
+
+
+dir.create("outputs/011", recursive = TRUE, showWarnings = FALSE)
+dir.create("intermediates/011", recursive = TRUE, showWarnings = FALSE)
+```
+
+
+# Preparing data to pass to PHASE
+
+
+## Read in the data
+
+These data should stored as strings of genotypes encoded as letters:
+
+* `M` = 2 copies of the _L_ allele
+* `P` = 2 copies of the _E_ allele
+* `H` = 1 copy of the _L_ and one copy of the _E_ allele.
+* `?` = genotype missing
+
+The distal assays are given by 5-letter words and the RoSA
+assays by 8-letter words.  The letters in each word are given 
+in genome coordinate order.
+
+We will continue to call the alleles `M` or `P` (rather than `E` or `L`).
+This terminology is vestigial, reflecting the language of "Mature" and "Premature"
+migrators that we have since shown to be inappropriate.
+
+```{r}
+PR_tib <- read_rds("data/RoSA_prince_genotype_data.rds")
+
+# This data set has the rosa column coded as E/L/H rather than P/M/H.
+# But the code is set up for P/M/H.  So, let's just switch it.
+RPGD <- PR_tib %>%
+  mutate(rosa = str_replace_all(rosa, "L", "M") %>% str_replace_all("E", "P"))
+```
+
+Looking at this it seems the perfect case for
+phasing all these variants using PHASE [@stephensNewStatisticalMethod2001].  This way we can get haplotype
+frequencies and, by making some very reasonable assumptions about the ancestral
+state of haplotypes, this will provide a good way to estimate the fraction of
+recombined haplotypes.
+
+## Split the genotype "words" into unphased "half-lotypes"
+
+We will explode
+the words into vectors and then apply a function.  Note, we will call the "M" allele "M"
+and the "P" allele "P" as it looks like almost any single-letter code for the variants
+can be interpreted correctly by PHASE.
+```{r}
+#' @param side for heterozygous positions side = 1 give one result and side = 2 gives the other
+halflotype <- function(x, side = 1) {
+  repl_1 <- c(M = "M", P = "P", H = "M", `?` = "?")
+  repl_2 <- c(M = "M", P = "P", H = "P", `?` = "?")
+  
+  if (side == 1) {
+    repl <- repl_1
+  } else { 
+    repl <- repl_2
+  }
+  unname(repl[x])
+}
+
+halflos <- RPGD %>%
+  mutate(prince_vec = strsplit(prince, ""),
+         rosa_vec = str_split(rosa, ""),
+         prince1 = map(prince_vec, ~ halflotype(., 1)),
+         prince2 = map(prince_vec, ~ halflotype(., 2)),
+         rosa1 = map(rosa_vec, ~ halflotype(., 1)),
+         rosa2 = map(rosa_vec, ~ halflotype(., 2)),
+         )
+```
+
+
+## Assess levels of missing data in both the rosa and prince regions
+```{r}
+h2 <- halflos %>%
+  gather("reg_hap", "halflo", rosa1, rosa2, prince1, prince2) %>%
+  mutate(region = str_replace(reg_hap, "[12]", ""),
+         num_miss = map_int(halflo, ~ sum(. == "?")))
+
+ggplot(h2, aes(x = num_miss)) +
+  geom_histogram(breaks = (0:11) - 0.5) + 
+  facet_wrap(~ region) +
+  scale_x_continuous(breaks = 0:10)
+```
+This is telling us that it make sense to ditch any
+genotypes with more than 1 missing data point, because if they are missing more than 1, they
+are likely missing all of them! So, we will do that.
+This tosses out entire individuals if they are missing genotypes at more than 1 SNP in either the
+distal or rosa regions.
+```{r}
+halflo_filt <- h2 %>%
+  group_by(Indiv) %>%
+  filter(all(num_miss <= 1)) %>%
+  ungroup()
+    
+```
+
+
+## Prepare a data frame nested by Pop for writing out PHASE files
+
+When we have spring/fall ecotype
+pairs in a particular sub-basin, I want to analyze them together in PHASE, and
+just refer to them by their shared sub-basin.
+```{r}
+for_phase <- halflo_filt %>%
+  rename(PopEco = Population) %>%
+  mutate(Pop = str_replace(PopEco, "[fF]all$|[sS]p$", "")) %>%
+  select(Indiv, Pop, PopEco, reg_hap, halflo) %>%
+  spread(reg_hap, halflo) %>%
+  group_by(Pop) %>%
+  nest() %>%
+  mutate(num_fish = map_int(data, nrow)) %>%
+  filter(!is.na(Pop) & num_fish > 5)  # filter out any unknown pops and any groups without many fish fish
+  
+for_phase
+```
+
+## Read in the genomic positions of those 5 + 8 SNPs
+
+We have the positions in the `data` directory (and in a supplemental table in the paper):
+```{r}
+var_pos_tibble <- read_tsv("data/assay-positions.tsv")
+
+var_poses <- var_pos_tibble %>%
+  pull(Position_on_Chr_28_in_Otsh_v1.0)
+```
+
+
+# Writing Phase Input Files and Running PHASE
+
+We will walk over the `for_phase` tibble and write phase files out to 
+different directories (named for the population) in /tmp, and we
+will write out the command to run it, and then run that with mclapply.
+```{r}
+# this is a function that operates on a single tibble like those in "data" in for_phase.
+# note: it is hardwired for 13 biallelic snps at the moment
+#' @param R_seed  The random number to use to set random numbers to use as seeds for PHASE
+# for reproducibility.
+write_phase_input <- function(dirname, D) {
+  dir.create(file.path("/tmp", dirname), showWarnings = FALSE)
+  outf <- file.path("/tmp", dirname, "input.txt")
+  cat(nrow(D), "\n", 13, "\n", sep = "", file = outf)
+  cat("P ", var_poses, "\n", sep = " ", file = outf, append = TRUE)
+  cat(rep("S", 13), "\n", sep = "", file = outf, append = TRUE)
+  
+  write_ind <- function(Indiv, prince1, prince2, rosa1, rosa2, ...) {
+    
+    cat(Indiv, "\n", file = outf, append = TRUE)
+    cat(c(prince1, rosa1), "\n", sep = " ", file = outf, append = TRUE)
+    cat(c(prince2, rosa2), "\n", sep = " ", file = outf, append = TRUE)
+    
+  }
+  
+  pwalk(D, write_ind)
+  
+  # and now return the command one should use to run it
+  str_c("cd ", dirname(outf), "; /Users/eriq/Documents/others_code/PHASE2.1.1/PHASE -S", floor(runif(1, 2, 10000)), " input.txt output 500 1 500 > stdout 2> stderr;")
+}
+
+set.seed(110) # for reproducibility (sets seeds for PHASE...)
+fp_wcall <- for_phase %>%
+  mutate(call = map2_chr(.x = Pop, .y = data, ~write_phase_input(.x, .y)))
+
+```
+
+That set everything up, now let's run it:
+```{r}
+dump <- mclapply(fp_wcall$call, function(x) system(x), mc.cores = 8)
+```
+
+# Retrieve PHASE output and process
+
+The last step takes only a few minutes, after which we can go and retrieve the estimated
+haplotype frequencies in each population. We read those in as tibbles:
+```{r}
+phase_results <- fp_wcall %>%
+  mutate(freqs = map(Pop, ~ read_table2(file.path("/tmp", .x, "output_freqs")) %>% arrange(desc(`E(freq)`))))
+```
+
+And now we just need to organize those results a little bit:
+```{r, rows.print = 11}
+summarized <- phase_results %>%
+  select(Pop, num_fish, freqs) %>%
+  unnest(cols = c(freqs)) %>%
+  select(-index) %>%
+  mutate(distal_region = str_sub(haplotype, 1, 5),
+         rosa_region = str_sub(haplotype, 6, 14)) %>%
+  select(Pop, num_fish, distal_region, rosa_region, `E(freq)`, S.E) %>%
+  filter(`E(freq)` >= 0.01)  # filter out low frequency haplotypes, but let's try not doing it...
+
+write_csv(summarized, "intermediates/011/haplo-freqs-unfiltered.csv")
+
+# hey! Let's format that for a table with Es and Ls
+hap_freqs <- read_csv("intermediates/011/haplo-freqs-unfiltered.csv") %>%
+  mutate(distal_region = str_replace_all(distal_region, "P", "E") %>% str_replace_all(., "M", "L"),
+         rosa_region = str_replace_all(rosa_region, "P", "E") %>% str_replace_all(., "M", "L")
+         ) %>%
+  rename(Location = Pop,
+         `Distal Region` = distal_region,
+         `RoSA Region` = rosa_region,
+         Freq = `E(freq)`,
+         S.E. = S.E) %>%
+  mutate(Freq = sprintf("%.3f", Freq),
+         S.E. = sprintf("%.6f", S.E.)) %>%
+  left_join(read_tsv("data/collection-name-modify.tsv"), by = "Location") %>%
+  select(`Collection location`, ESU, everything()) %>%
+  select(-Location) %>%
+  rename(`Collection N` = num_fish)
+
+
+write_csv(hap_freqs, "outputs/011/data-table-distal-rosa-hap-freqs-unfiltered-raw.csv")
+```
+
+## Summarize the haplotypes into categories
+
+The late lineage haplotypes at the distal region are either
+"MMMMM", "MPPMM", or "MPMMM".  The early lineage haplotypes
+in the distal region are merely "PPPPP". Everything else
+we call "A" for "ambiguous."  
+
+Meanwhile, we summarise the RoSA region with "MMMMMMMM" as late
+lineage, while "PPPPPPPP" is early-lineage, and anything else
+is A for Ambiguous.  Note that PHASE has imputed any missing genotypes
+(of which there will be only one for each region) so it is easy to
+deal with these....no `?`'s.
+
+```{r}
+sf_freqs <- summarized %>%
+  mutate(distal_SF_type = case_when(
+    distal_region %in% c("MMMMM", "MPPMM", "MPMMM") ~ "L",
+    distal_region %in% c("PPPPP") ~ "E",
+    TRUE ~ "A"
+  )) %>%
+  mutate(rosa_SF_type = case_when(
+    rosa_region == "MMMMMMMM" ~ "L", 
+    rosa_region == "PPPPPPPP" ~ "E",
+    TRUE ~ "A"
+  ))  %>%
+  mutate(compo = str_c(distal_SF_type, rosa_SF_type, sep = "/")) %>%
+  group_by(Pop, compo) %>%
+  summarize(freq = sum(`E(freq)`)) %>%
+  spread(compo, freq)
+
+sf_freqs
+```
+
+
+```{r}
+# let's format that nicely for output
+tmp <- sf_freqs %>%
+  mutate_at(vars(-Pop), function(x) {y <- ifelse(is.na(x), 0, x); sprintf("%.2f", y)}) %>%
+  left_join(., summarized %>% distinct(Pop, num_fish)) %>%
+  select(Pop, num_fish, everything()) %>%
+  rename(N = num_fish)
+
+# and we can sort the columns and rows into the right order to
+# just copy and paste this stuff into the Google Doc Table...
+tmp_sorted <- tmp %>%
+  select(Pop, N, `A/L`, `A/E`, `L/L`, `L/E`, `E/L`, `E/E`) %>%
+  ungroup() %>%
+  mutate(Pop = factor(Pop, levels = c("Siletz", "KlamathEntry", "IGH", "Salmon", "Trinity", "EelVAfl", "RussianWSH", "Butte", "ColemanLF", "FRH", "Keswick_WR"))) %>%
+  mutate(Pop = recode_factor(Pop, IGH = "Klamath R. - Iron Gate H.", ColemanLF = "Battle Creek L.F.", .default = levels(Pop))) %>%
+  arrange(Pop)
+
+# now, write that out to paste into the google doc
+write_csv(tmp_sorted, "outputs/011/haplo-freqs-to-paste-into-google-doc.csv")
+
+
+```
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations 

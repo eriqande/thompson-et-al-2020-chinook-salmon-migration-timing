@@ -1,0 +1,772 @@
+---
+title: "Assess genotyping error rate via subsampled high-read depth samples"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+
+Another way to assess the accuracy of our approach to inferring genotypes
+of individuals is to try an experiment that we are able to do with 12 samples
+of Chinook salmon sequenced at much higher read depths.  We provided tissues for
+these fish (they were different fish than the 160 fish used in our original sequencing effort
+for this project/paper)
+from our tissue repository, to
+colleagues in Oregon and Canada.  They did fairly deep (20-30X) sequencing of the individuals
+and provided us with FASTQ files.  We mapped those to the Chinook genome using bwa mem,
+and have extracted the BAM file for Chromosome 28.  
+
+Now we will include these 12 individuals---6 are from the Coleman Hatchery Late Fall Run group,
+and 6 more are from the Eel river (a group not represented in the WGS data of the
+present project)---into variant calling on the 5.16 Mb region on Chromosome 28.  We include them
+in two different ways:
+
+1. With all the available reads from each fish
+2. Having subsampled each to have roughly 1.5X coverage.
+
+We can then compare the genotypes called and/or imputed from these new individuals between
+the two different read-depth
+conditions to see how discordant the genotype calls are.  The rate of discordance should
+tell us something about how much less accurate the genotypes are when called (or imputed)
+from low read depth data compared to when they are called/inferred with high read depth data.
+
+
+# On the cluster
+
+## Get the data to work with
+
+We have the full-size BAMs and the BAMs subsampled to different depths on Google Drive.
+Get them:
+```sh
+mkdir -p high-depth-chinook
+cd high-depth-chinook
+rclone copy  gdrive-rclone:Hoffman/u-project-kruegg/eriq/osu-chinook-nobackup/chromo-bams-rmduped chromo-bams-rmduped
+rclone copy  gdrive-rclone:Hoffman/u-project-kruegg/eriq/osu-chinook-nobackup/subsampled-bams subsampled-bams
+cd .. # back to main repo directory level
+```
+
+## Make bamlists for the different scenarios
+
+```sh
+# make a directory for storing intermediates
+mkdir -p intermediates/204-02
+
+# make the full read depth bam list:
+(ls -l high-depth-chinook/chromo-bams-rmduped/*.bam | awk '{print $NF}';
+ls -l chinook_WGS_processed/*.bam | awk '{print $NF}') \
+> intermediates/204-02/bams-full-read-depth.list
+
+# make the 1.5X read depth sub-sampled bam list:
+(ls -l high-depth-chinook/subsampled-bams/1.5X-NC_037124.1-chinook_*.bam | awk '{print $NF}';
+ls -l chinook_WGS_processed/*.bam | awk '{print $NF}') \
+> intermediates/204-02/bams-1.5X-depth.list
+
+# Segmentize the 5.16 Mb, NC_037124.1:9660000-14825000 into 20 Kb chunks.
+# That is 50 segments per Mb, so about 250 segments in total.
+# We will define a job array over those
+echo boing | awk '
+  BEGIN{printf("index\tregion\n")} 
+  {for(i=9660000; i<14825000; i+= 20000) {
+    start = i+1
+    end = i+20000
+    if(end > 14825000) end = 14825000;
+    printf("%04d\tNC_037124.1:%d-%d\n", ++idx, start, end);
+  }}' > intermediates/204-02/regions-list.txt
+```
+
+## Job array for GATK genotyping in 20 Kb segments
+
+We will use the default assembly region padding of 100 and trust that
+this will let active regions on the edge of our intervals be processed
+correctly.
+
+
+```sh
+# directories for output
+mkdir -p intermediates/204-02/{slurm_err,slurm_out}
+
+# create a a sequence dictionary for GATK
+module load bio/gatk
+gatk CreateSequenceDictionary -R genome/Otsh_V1_genomic.fna -O genome/Otsh_V1_genomic.dict
+
+# launch the job array
+# first 10 as a test
+sbatch --array=1-10 script/204-02-gatk-hapcaller-array.sh
+# Submitted batch job 60129
+
+# that seems to be working, so let's launch the rest:
+sbatch --array=11-259 script/204-02-gatk-hapcaller-array.sh
+# Submitted batch job 60139
+```
+
+Once that is done, we can check the stderr files to make sure that things
+finished up the way we hoped that they might, like this:
+```sh
+for i in {1..259}; do
+  IDX=$(printf "%04d" $i)
+  for D in bams-1.5X-depth bams-full-read-depth; do
+    if ! grep 'Shutting down engine'  intermediates/204-02/stderr/$D-$IDX.stderr > /dev/null; then 
+      echo $D/$IDX.vcf is incomplete; 
+    fi
+  done
+done
+```
+It all looks good.
+
+## Merge all the VCF files into 1
+
+```sh
+module load bio/bcftools
+
+mkdir -p intermediates/204-02/entire-vcfs
+
+bcftools concat intermediates/204-02/VCFs/bams-1.5X-depth/*.vcf | bcftools view -Oz >  intermediates/204-02/entire-vcfs/1.5X-172-indivs.vcf.gz
+bcftools index intermediates/204-02/entire-vcfs/1.5X-172-indivs.vcf.gz
+
+bcftools concat intermediates/204-02/VCFs/bams-full-read-depth/*.vcf | bcftools view -Oz >  intermediates/204-02/entire-vcfs/full-depth-172-indivs.vcf.gz
+bcftools index intermediates/204-02/entire-vcfs/full-depth-172-indivs.vcf.gz
+
+```
+
+Then we want to filter those down to only the positions that were retained
+for running BEAGLE in 004.  We do that by getting the positions from 
+`intermediates/004/greb1l-ish-filtered.recode`, like this:
+```sh
+bcftools query -f '%CHROM\t%POS\n' intermediates/004/greb1l-ish-filtered.recode.vcf > intermediates/204-02/pos-to-use-for-beagle-from-004.txt
+```
+And then we filter our VCFs down from that, but there is not perfect
+overlap in the callsets here with GATK 4.  So, rather, we will
+just filter directly for what we want.  In particular, this will remove multiallelic
+variants.
+
+Filter sites with bcftools (rather than vctools) this time.  Criteria:
+
+1. biallelic
+2. Genotype call in the vcf for more then 40% of the individuals.
+3. Minor allele freq > 0.05
+4. Just snps and indels  (we chuck a few MNPs and other things)
+
+We also drop the 14 individuals with low read depth
+
+```sh
+bcftools view -S ^stored_results/203/low-depth-14-to-drop.txt \
+  -Oz -m 2 -M 2 --types=snps,indels -i 'F_MISSING < 0.6 & MAF > 0.05' \
+  intermediates/204-02/entire-vcfs/1.5X-172-indivs.vcf.gz > intermediates/204-02/entire-vcfs/1.5X-for-beagle.vcf.gz
+
+bcftools view -S ^stored_results/203/low-depth-14-to-drop.txt \
+  -Oz -m 2 -M 2 --types=snps,indels -i 'F_MISSING < 0.6 & MAF > 0.05' \
+  intermediates/204-02/entire-vcfs/full-depth-172-indivs.vcf.gz > intermediates/204-02/entire-vcfs/full-depth-for-beagle.vcf.gz
+```
+
+## Let's reheader these with better names too, at least for the original fish
+
+```sh
+bcftools reheader -s intermediates/004/new_names_for_vcf.txt intermediates/204-02/entire-vcfs/1.5X-for-beagle.vcf.gz > intermediates/204-02/entire-vcfs/1.5X-for-beagle-reheadered.vcf.gz
+
+bcftools reheader -s intermediates/004/new_names_for_vcf.txt intermediates/204-02/entire-vcfs/full-depth-for-beagle.vcf.gz > intermediates/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz
+```
+
+
+
+
+## Run both through BEAGLE
+
+Let's use all 20 threads for this, so be sure we are running on an entire dedicated node. `srun -c 20 --pty /bin/bash`
+
+Impute:
+```sh
+BEAGLE=~/java-programs/BEAGLE_4.1/beagle.27Jan18.7e1.jar
+
+mkdir -p intermediates/204-02/beagle-outputs
+
+java -jar $BEAGLE gl=intermediates/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz \
+  out=intermediates/204-02/beagle-outputs/full-depth-imputed \
+  nthreads=20 > intermediates/204-02/beagle-outputs/full-depth-imputed.stdout \
+  2> intermediates/204-02/beagle-outputs/full-depth-imputed.stderr
+
+
+
+java -jar $BEAGLE gl=intermediates/204-02/entire-vcfs/1.5X-for-beagle-reheadered.vcf.gz \
+  out=intermediates/204-02/beagle-outputs/1.5X-imputed \
+  nthreads=20 > intermediates/204-02/beagle-outputs/1.5X-imputed.stdout \
+  2> intermediates/204-02/beagle-outputs/1.5X-imputed.stderr
+
+
+```
+
+For completeness, we will now also phase them:
+```sh
+
+java -jar $BEAGLE gt=intermediates/204-02/beagle-outputs/full-depth-imputed.vcf.gz \
+  out=intermediates/204-02/beagle-outputs/full-depth-phased \
+  nthreads=20 > intermediates/204-02/beagle-outputs/full-depth-phased.stdout \
+  2> intermediates/204-02/beagle-outputs/full-depth-phased.stderr
+
+
+
+java -jar $BEAGLE gt=intermediates/204-02/beagle-outputs/1.5X-imputed.vcf.gz \
+  out=intermediates/204-02/beagle-outputs/1.5X-phased \
+  nthreads=20 > intermediates/204-02/beagle-outputs/1.5X-phased.stdout \
+  2> intermediates/204-02/beagle-outputs/1.5X-phased.stderr
+
+```
+
+## Annotate those VCFs, adding the read depths back to them
+
+We want to add the AD and the DP fields back to these, since BEAGLE drops them.
+```sh
+for i in intermediates/204-02/beagle-outputs/*.vcf.gz; do echo $i; bcftools index $i; done
+for i in intermediates/204-02/entire-vcfs/*.vcf.gz; do echo $i; bcftools index $i; done
+
+mkdir -p intermediates/204-02/re-annotated/
+for S in 1.5X full-depth; do
+  for M in imputed phased; do
+    ls intermediates/204-02/entire-vcfs/$S-for-beagle-reheadered.vcf.gz
+    ls intermediates/204-02/beagle-outputs/$S-$M.vcf.gz
+    
+    bcftools annotate -Oz -a intermediates/204-02/entire-vcfs/1.5X-for-beagle-reheadered.vcf.gz -c FORMAT/DP,FORMAT/AD intermediates/204-02/beagle-outputs/$S-$M.vcf.gz > intermediates/204-02/re-annotated/$S-$M-reannotated.vcf.gz
+    
+    bcftools index -f intermediates/204-02/re-annotated/$S-$M-reannotated.vcf.gz
+  done
+done
+
+```
+Now, we will bring the `intermediates/204-02/re-annotated` directory back to my laptop, and we will also grab
+`intermediates/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz` and put it there.
+
+
+# Analyzing the results on my laptop
+
+
+## Reading in and formatting the data
+
+First things first, we pull all of the different data sets together into one big, long, data frame.
+```{r, message=FALSE}
+library(tidyverse)
+library(vcfR)
+
+# Let's restrict our attention to only those markers that were used in the
+# analyses earlier in the paper.  We can get this from:
+posies <- read_rds("./stored_results/004/big_haps2.rds") %>%
+  pull(POS) %>%
+  unique(.)
+
+
+long_tibble <- list(
+  thinned = read.vcfR("intermediates/204-02/re-annotated/1.5X-phased-reannotated.vcf.gz") %>% vcfR2tidy() %>% .$gt,
+  full_depth = read.vcfR("intermediates/204-02/re-annotated/full-depth-phased-reannotated.vcf.gz") %>% vcfR2tidy() %>% .$gt,
+  not_imputed = read.vcfR("intermediates/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz") %>% vcfR2tidy() %>% .$gt
+) %>% 
+  bind_rows(.id = "scenario") %>%
+  filter(POS %in% posies)
+```
+
+Now, process gt_DP and gt_AD a bit so that NAs are 0s and 0,0's and then break gt_AD into
+two columns. And drop a few colums that we won't be needing. And make a genotypes "012" column.
+```{r}
+long_tibble2 <- long_tibble %>%
+  mutate(gt_DP = ifelse(is.na(gt_DP), 0, gt_DP)) %>%
+  mutate(gt_AD = ifelse(is.na(gt_AD), "0,0", gt_AD)) %>%
+  separate(gt_AD, into = c("AD_ref", "AD_alt"), sep = ",", convert = TRUE) %>%
+  select(-gt_DS, -gt_GQ, -gt_GP) %>%
+  mutate(gt_012 = case_when(
+    gt_GT == "0/0" | gt_GT == "0|0" ~ 0L,
+    gt_GT == "0/1" | gt_GT == "1/0" | gt_GT == "0|1" | gt_GT == "1|0" ~ 1L,
+    gt_GT == "1/1" | gt_GT == "1|1" ~ 2L,
+    TRUE ~ NA_integer_
+  )) %>%
+  rename(  # finally, clean up the column names a little bit prior to pivoting wider
+    GT = gt_GT,
+    DP = gt_DP,
+    GTalleles = gt_GT_alleles,
+    PL = gt_PL,
+    GT012 = gt_012
+  )
+```
+
+While we are at it, compute the frequencies of the ALT
+alleles in the spring and fall run fish (just using the "thinned" data set). As we might
+want those quantities down the road.
+
+```{r}
+long_tibble3 <- long_tibble2 %>%
+  group_by(POS) %>%
+  mutate(
+    spring_alt_freq = mean(GT012[str_detect(Indiv, "Spring") & scenario == "thinned"]) / 2,
+    fall_alt_freq = mean(GT012[str_detect(Indiv, "Fall") & scenario == "thinned"]) / 2
+    ) %>%
+  ungroup()
+```
+
+
+Now, we shall pivot this thing wider so that each position (row) has columns
+that correspond to thinned, full-depth, and non-imputed.  From that format
+it will be easy to count up mismatching genotypes.
+
+```{r}
+wider_tibble <- long_tibble3 %>%
+  select(-GTalleles, -DP, -GT, -PL) %>%
+  pivot_wider(
+    names_from = c(scenario),
+    values_from = c(GT012, AD_ref, AD_alt)
+              )
+```
+
+
+
+## Now, we look at the 12 high-read-depth fish
+
+We want to make comparisons between the genotypes for these fish called/imputed from
+high read depth data and also from low-read depth data.
+
+```{r}
+new_fish <- wider_tibble %>%
+  filter(str_detect(Indiv, "^chinook_"))
+```
+
+
+### Let's get an overall picture of the differences between the calls
+
+#### Full depth raw call vs full depth imputed 
+
+```{r}
+new_fish %>%
+  count(GT012_not_imputed, GT012_full_depth) %>%
+  group_by(GT012_not_imputed) %>%
+  mutate(ppn = n / sum(n))
+```
+
+So, at full depth the imputation does not change it much from just the call made from GATK.  
+
+For downstream analyses/comparisons, we will simply use the "full_depth" set of genotypes
+which were fed through BEAGLE, but, as we see, are remarkably similar to the non-imputed versions
+(but which are also probably somewhat more accurate.)
+
+#### Full depth imputed vs thinned imputed
+
+
+
+```{r}
+cimp <- new_fish %>%
+  count(GT012_full_depth, GT012_thinned) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  group_by(GT012_full_depth) %>%
+  mutate(ppn = n / sum(n))
+cimp
+```
+
+Aha! This is interesting.  Although the `whoa`-estimated het miscall rate was down around 5%, in this analysis
+it appears to be considerably higher, with miscalls to reference heterozygotes occuring at a higher rate than
+miscalls to alternate homozygotes. We can use these (and related) results to simulate the effect
+of imputation errors.
+
+
+##### Here is the overall rate of concordant/discordant calls
+
+This is for the entire 5.16 Mb region.
+```{r}
+cimp %>%
+  mutate(correct = GT012_full_depth == GT012_thinned) %>%
+  group_by(correct) %>%
+  summarise(num = sum(n)) %>%
+  mutate(ppn = num/sum(num))
+```
+
+##### Compare to alle freqs
+
+```{r, eval=FALSE}
+# there are not super clear trends with allele frequency
+new_fish %>%
+  mutate(fcat = cut(fall_alt_freq, breaks = (-1:11)/10),
+         scat = cut(spring_alt_freq, breaks = (-1:11)/10)) %>%
+  count(fcat, scat, GT012_not_imputed, GT012_thinned) %>%
+  filter(!is.na(GT012_not_imputed) & !is.na(GT012_thinned)) %>%
+  group_by(fcat, scat, GT012_not_imputed) %>%
+  mutate(ppn = n / sum(n)) %>% View()
+
+```
+
+### Explore allele depths 
+
+When I have looked at these things before, the allele depths of the full-depth
+individuals have appeared somewhat imbalanced in the discordant calls.  
+
+So, first, let's look at the ADs of het calls.  First in the not_imputed full depth ones:
+```{r}
+new_fish %>%
+  filter(GT012_not_imputed == 1,
+         AD_ref_not_imputed < 50,
+         AD_alt_not_imputed < 50
+  ) %>%
+  count(AD_ref_not_imputed, AD_alt_not_imputed) %>%
+  ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = n)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme(aspect.ratio = 1)
+```
+
+That is kind of cool, and in the "stair-steps" along the side you can see
+the effect of the genotype likelihood model and base quality scores.  You
+can have 32 copies of one allele and 2 of the other, and it still is going
+to call it a heterozygote.  I suppose that some Base quality score recalibration
+would be worthwhile with such high read depth data (less so with really
+low read depth data, I imagine.)
+
+I can't help but think that some of these heterozygotes near the x=0
+and y=0 axes are actually homozygous, but we can't just filter them
+out like that, because those are also precisely the ones that you expect
+to be more likely to be called as homozygotes with a read depth of 2 or greater.
+
+However, note that if these genotypes (called in the "not imputed" data set at full depth)
+really are all heterozygotes, then we we expect that the error rate (rate of calling them as
+homozygotes) from thinned data at read depths (sum of allele depths) of 0 or 1, should be the
+same across all the depth categories in the plot above.  We can test that.  First we count
+up the fraction of full-depth hets called as homozygotes in each of the AD cells:
+```{r}
+wrong_homoz_fracts <- new_fish %>%
+  mutate(thinned_AD_sum = AD_ref_thinned + AD_alt_thinned) %>% 
+  filter(GT012_not_imputed == 1,
+         AD_ref_not_imputed < 50,
+         AD_alt_not_imputed < 50
+  ) %>%
+  filter(
+    !is.na(GT012_thinned), 
+    thinned_AD_sum == 0 || thinned_AD_sum == 1
+    ) %>%
+  group_by(AD_ref_not_imputed, AD_alt_not_imputed, GT012_thinned) %>%
+  tally() %>% 
+  mutate(ppn = n/sum(n)) %>%
+  summarise(
+    ppn_homoz = ifelse(!any(GT012_thinned == 1), 1, 1 - ppn[GT012_thinned == 1]),
+    tot_n = sum(n)
+    )
+```
+
+Then we plot them all:
+```{r}
+ggplot(wrong_homoz_fracts, aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme(aspect.ratio = 1)
+```
+
+And now let us restrict the plot to only those cells with at least 10 observations
+in them:
+```{r}
+wrong_homoz_fracts %>%
+  filter(tot_n >= 10) %>%
+ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme(aspect.ratio = 1)
+```
+
+So, there clearly are some genotypes called in the not_imputed data set that
+must be incorrect, while the calls from thinned an imputed data set are correct.
+
+#### Allele depths in the full-depth imputed one
+
+I just want to verify that we get roughly the same result with the full-depth
+imputed data set being used as the reference for heterozygotes.  I expect that we
+will, which means that the incorrect genotype likelihoods are so strong that they cannot be
+countered by haplotypic neighborhood information.
+
+```{r}
+wrong_homoz_fracts_impfd <- new_fish %>%
+  mutate(thinned_AD_sum = AD_ref_thinned + AD_alt_thinned) %>% 
+  filter(GT012_full_depth == 1,
+         AD_ref_not_imputed < 50,
+         AD_alt_not_imputed < 50
+  ) %>%
+  filter(
+    !is.na(GT012_thinned), 
+    thinned_AD_sum == 0 || thinned_AD_sum == 1
+    ) %>%
+  group_by(AD_ref_not_imputed, AD_alt_not_imputed, GT012_thinned) %>%
+  tally() %>% 
+  mutate(ppn = n/sum(n)) %>%
+  summarise(
+    ppn_homoz = ifelse(!any(GT012_thinned == 1), 1, 1 - ppn[GT012_thinned == 1]),
+    tot_n = sum(n)
+    )
+```
+
+Then we plot them all:
+```{r}
+ggplot(wrong_homoz_fracts_impfd, aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme(aspect.ratio = 1)
+```
+
+And now let us restrict the plot to only those cells with at least 10 observations
+in them:
+```{r}
+wrong_homoz_fracts_impfd %>%
+  filter(tot_n >= 10) %>%
+ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme(aspect.ratio = 1)
+```
+
+So, we see pretty much the same thing with those guys.
+
+**The take-home message is that some of the high-read depth heterozygote calls are
+almost certainly incorrect, and, as a consequence, the imputation error rates that
+we estimate here for our imputed data set by this method are almost certainly
+somewhat inflated.  Nonetheless, we will use those error rates as is, and show
+that even under such high imputation error rates the effect on downstream analyses
+is minimal.**
+
+
+## Focus on the RoSA 
+
+The main downstream uses of the imputed and phased sequences involve plotting trees
+from the sequences in the RoSA region.  So, to assess the impact on those downstream
+analyses, we will estimate error rates specifically in the RoSA region.  We expect these
+error rates to be somewhat lower because there are fewer heterozygotes in that region,
+as it includes two highly divergent haplotypic lineages.  
+
+```{r}
+rfocus <- new_fish %>%
+  filter(POS > 12.26e6 & POS < 12.29e6) %>%
+  count(GT012_full_depth, GT012_thinned) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  group_by(GT012_full_depth) %>%
+  mutate(ppn = n / sum(n))
+rfocus
+```
+
+What we find there is a slightly lower rate of heterozygotes being called as homozygotes.  However,
+as expected, the _overall_ rate of genotype discordances is much lower, owing to the reduced
+fraction of heterozygotes:
+```{r}
+rfocus %>%
+  mutate(correct = GT012_full_depth == GT012_thinned) %>%
+  group_by(correct) %>%
+  summarise(num = sum(n)) %>%
+  mutate(ppn = num/sum(num))
+```
+
+### Discordance rates for simulating imputation errors
+
+We would like to estimate values that can be used for simulating errors into
+our existing imputed and phased data sets.  The appropriate measure to use for that
+is the rate at which genotypes are called X in the thinned data sets and called Z in
+the full-depth data set.  In other words, we want to be
+simulating errors at the rate at which observed
+(i.e. thinned) genotypes are incorrect  We get this by rolling things up differently:
+```{r}
+rtfocus <- new_fish %>%
+  filter(POS > 12.26e6 & POS < 12.29e6) %>%
+  count(GT012_thinned, GT012_full_depth) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  group_by(GT012_thinned) %>%
+  mutate(ppn = n / sum(n))
+rtfocus
+```
+
+We have to keep in mind that GT012_thinned == 1 & GT012_full_depth == 2 is going to be a low category in
+this case cecause all of these high depth fish are fall-run, and the
+reference genome is from a fall-run fish, so this comparison lacks a lot of the ALT homozygotes.  
+
+For a quick comparison, let's look at these values across a the whole 5.16 Mb:
+```{r}
+tfocus_5.16 <- new_fish %>%
+  count(GT012_thinned, GT012_full_depth) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  group_by(GT012_thinned) %>%
+  mutate(ppn = n / sum(n))
+tfocus_5.16
+```
+
+Comparing the above two tables is informative.  It shows us that, in the RoSA, if we have called something
+as homozygous, that is most likely correct: only a 3 to 3.6% rate that it might actually be a heterozygote.  (And
+many of those are really solid heterozygotes with even ratios of ALT and REF reads:
+```{r}
+new_fish %>%
+  filter(POS > 12.26e6 & POS < 12.29e6) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  filter(
+    (GT012_thinned == 0 & GT012_full_depth == 1) |
+    (GT012_thinned == 2 & GT012_full_depth == 1))
+```
+
+However, if we have called something as a heterozygote in the thinned data, 16% of the time it was called
+as a homozygote in the full depth data.  So, in the RoSA, when we have imputed a homozygote we are "more likely to
+be correct" than if we imputed a heterozygote.  
+That is interesting.  
+
+In the RoSA, we note that when fish were imputed to be hets but they are actually homozygous
+they are much more likely to be called as the reference homozygote than the alt.  This might be owing
+to the fact that these are all fall run fish.  At these loci, let's look at the freqs of the
+ALT allele in spring and fall run:
+```{r}
+new_fish %>%
+  filter(POS > 12.26e6 & POS < 12.29e6) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  filter(GT012_thinned == 1) %>%
+  filter(GT012_full_depth %in% c(0, 2)) %>%
+  ggplot(aes(x = fall_alt_freq, y = spring_alt_freq, colour = as.factor(GT012_full_depth))) +
+  geom_jitter()
+```
+
+Hmmm...so we don't see a really clear pattern there.  However, given that these were all fall-run fish
+and given that the rate at which thinned imputed 1's are either full-depth 0's or 1's in the full
+5.16 Mb region, I am inclined to set simulated discordance rates from 1 -> 0 and 1 -> 2 closer to
+one another.
+
+So, given the values and evidence compiled here, I think that a suitable simulation to
+assess the effect of imputation error on our results in the RoSA would be to simulate
+errors such that probability of changes in the data are:
+```{r}
+est_rates_for_simulation <- tribble(
+  ~imputed_genotype, ~simulated_new_genotype, ~rate,
+  0, 0, 0.968,
+0, 1, 0.03,
+0, 2, 0.002,
+1, 0, 0.09,
+1, 1, 0.84,
+1, 2, 0.07,
+2, 0, 0.002,
+2, 1, 0.036,
+2, 2, 0.962
+)
+est_rates_for_simulation
+```
+
+And we will save that into outputs:
+```{r}
+write_rds(est_rates_for_simulation, path = "outputs/204/est_rates_for_simulation.rds")
+```
+
+
+In the next document (204-03) we will use those values to propagate changes
+to the imputed data set and observe the effects on the trees made.
+
+# Following up on error rates
+
+Though we use the rates estimated above to propagate simulated errors, 
+into our data, I do suspect that those
+estimated rates are a little too high. That is fine for showing that even at such
+high error rates our inferred trees don't change much, etc.  But for my own
+knowledge about these processes, and to follow up further on my own hunch that the
+genotype likelihoods in many cases give too much weight to artificially low sequencing
+error rates, I want to follow up on this.  (One thing I will note here is that
+this might provide a good argument for doing base quality score recalibration---I should
+investigate that).
+
+## First, low-read-depth hets that are called homozygous at high depth
+
+This is an interesting category, cuz it is not going in the direction we expect.  Let's have
+a look at it along the whole 5.16 Mb chunk.  First whittle it down to calls where the "truth"
+was a homozygote of some sort and the thinned call was a heterogygote:
+```{r}
+wrong_thin_hets <- new_fish %>%
+  filter(
+    GT012_full_depth != 1,
+    GT012_thinned == 1
+  )
+```
+
+And now, let us look at the read depths there for the two different homozygote categories.
+```{r}
+wrong_thin_hets %>%
+  count(GT012_full_depth, AD_ref_not_imputed, AD_alt_not_imputed) %>%
+  filter(AD_ref_not_imputed < 40, AD_alt_not_imputed < 40) %>%
+  ggplot(aes(x = AD_ref_not_imputed, AD_alt_not_imputed, fill = n)) + 
+  geom_tile() +
+  facet_wrap(~GT012_full_depth) +
+  scale_fill_viridis_c()
+```
+
+So, most of those are quite credibly not heterozygotes when looking at the full
+read depth information.
+
+## Het miscall when we only use good high-depth sites
+
+From my previous explorations, we saw clear evidence that some of the genotypes
+called as heterozygotes in the full-depth data are likely incorrect.  So, now I am
+going to tally up the het miscalls from the thinned data, but only use the
+high read depth data that is part of that central cluster of things that look like we
+should have confidence in them: Let's say we cut out the circle centered on 12, 12, and 
+having radius 6.  So that means it satisfies $(x-12)^2 + (y-12)^2 \leq r^2$.  Let's use that
+to pick those things out:
+```{r}
+good_ball_hets <- new_fish %>%
+  filter(
+    GT012_not_imputed == 1,
+    (AD_ref_not_imputed - 12)^2 + (AD_alt_not_imputed - 12)^2 < 6^2
+  )
+
+# plot those, just to verify that we have what we want
+good_ball_hets %>%
+  count(AD_ref_not_imputed, AD_alt_not_imputed) %>%
+  ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = n)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  theme(aspect.ratio = 1)
+```
+
+Yep, that looks right.  Now, using only those calls as the "truth", let's see what our
+estimated het miscall rate is:
+```{r}
+good_ball_hets %>%
+  count(GT012_full_depth, GT012_thinned) %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  group_by(GT012_full_depth) %>%
+  mutate(ppn = n / sum(n))
+```
+
+So, we are still looking at 28% het miscall as opposed to 34%.  So, not great.  
+
+### Het miscall by depth
+
+Let's go ahead and break that down by thinned depth
+```{r}
+good_ball_hets %>%
+  mutate(thinned_sumAD = AD_ref_thinned + AD_alt_thinned) %>%
+  group_by(thinned_sumAD, GT012_full_depth, GT012_thinned) %>%
+  tally() %>%
+  filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
+  group_by(thinned_sumAD) %>%
+  mutate(
+    ppn = n/sum(n),
+    n_sum = sum(n)
+    ) %>%
+  filter(thinned_sumAD <= 6) %>%
+  ggplot() +
+  geom_col(aes(x = thinned_sumAD, y = ppn, fill = factor(GT012_thinned))) +
+  scale_fill_brewer(palette = "Set1") +
+  geom_text(mapping = aes(x = thinned_sumAD, y = 1.05, label = n_sum))
+```
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+
+
+

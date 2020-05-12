@@ -1,0 +1,512 @@
+---
+title: "Aligning Coho Genome to Chinook"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+## Overview
+
+For many analyses it will be nice to have inferred the ancestral and derived
+alleles. The coho genome was recently posted 
+on NCBI.  We can align that against the Chinook genome and use it as the
+likely ancestral states for some analyses.
+
+We do this with LASTZ with a workflow that involves, in brief:
+
+1. Using Figure 1 in @christensenChinookSalmonOncorhynchus2018 to figure out which coho chromosomes to align to the
+chinook chromosomes.
+2. Align and chain things with LASTZ.
+3. Single_cov it.
+4. Convert it to a fasta.
+
+
+```{r, message=FALSE}
+library(tidyverse)
+dir.create("outputs/001", recursive = TRUE, showWarnings = FALSE)
+dir.create("intermediates/001", recursive = TRUE, showWarnings = FALSE)
+```
+
+
+## Figuring out which chromosomes to align
+
+Figure 1 in @christensenChinookSalmonOncorhynchus2018 is useful  Rather than mapping every chromosome to every other
+one and then dealing with the paralogs and all sorts of filtering, I can just see 
+which chromosomes are homologous in the two species.
+```{r}
+cc_chroms <- tribble(
+  ~chinook,  ~coho,
+  1, 10,
+  1, 11,
+  1, 6,
+  2, 1,
+  3, 2,
+  3, 13,
+  4, 3,
+  4, 8,
+  5, 12,
+  5, 13,
+  6, 4,
+  7, 5,
+  7, 16,
+  8, 14,
+  8, 15,
+  9, 6,
+  9, 10,
+  10, 16,
+  10, 30,
+  11, 7,
+  11, 21,
+  12, 3,
+  12, 8,
+  13, 15,
+  13, 16, 
+  13, 17,
+  14, 16,
+  14, 17,
+  14, 18,
+  15, 9,
+  15, 23,
+  16, 1,
+  16, 17,
+  16, 18,
+  17, 9,
+  17, 19,
+  18, 21,
+  19, 22,
+  20, 23,
+  21, 19,
+  22, 24,
+  23, 2,
+  23, 13,
+  24, 20,
+  25, 19,
+  25, 25,
+  26, 26,
+  27, 6,
+  27, 10,
+  28, 27,
+  29, 11,
+  29, 20,
+  30, 28,
+  31, 14,
+  32, 1,
+  32, 20,
+  33, 28,
+  33, 29,
+  34, 12
+)
+```
+
+Now, we need to associate those chromosome numbers with the names of the chromosomes in the 
+fastas for the coho and chinook assemblies that we used.
+```{r, message=FALSE}
+coho_assem <- read_tsv("data/Okis_V1_assembly_report.txt.gz", comment = "#") %>%
+  mutate(coho = as.numeric(str_replace_all(`Assigned-Molecule`, "[^0-9]", ""))) %>%
+  rename(coho_chrom_name = `RefSeq-Accn`) %>%
+  filter(!is.na(coho)) %>%
+  select(coho, coho_chrom_name)
+```
+
+```{r, message=FALSE}
+chinook_assem <- read_tsv("data/Otsh_V1_assembly_report.txt.gz", comment = "#") %>%
+  mutate(chinook = as.numeric(str_replace_all(`Assigned-Molecule`, "[^0-9]", ""))) %>%
+  rename(chinook_chrom_name = `RefSeq-Accn`) %>%
+  filter(!is.na(chinook)) %>%
+  select(chinook, chinook_chrom_name)
+```
+
+And now we can get a table of the chromosome names
+```{r}
+ccc <- left_join(cc_chroms, chinook_assem) %>%
+  left_join(coho_assem)
+ccc
+```
+And now we can make a file that has a job ID and then a chinook chrom name and then
+a quoted string of coho chroms on each line:
+```{r}
+job_list <- ccc %>%
+  group_by(chinook_chrom_name) %>%
+  summarise(coho_chroms = paste(coho_chrom_name, collapse = " ")) %>%
+  mutate(idx = 1:n()) %>%
+  select(idx, chinook_chrom_name, coho_chroms)
+job_list
+```
+
+Then, we can write that out, tab delimited
+```{r}
+write.table(job_list, file = "intermediates/001/genome-align-job-list.txt", quote = FALSE, col.names = FALSE, row.names = FALSE, sep = "\t")
+```
+
+
+## Compiling programs and preparing on the cluster
+
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/programs
+
+wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.00.tar.gz
+gunzip lastz-1.04.00.tar.gz
+tar -xvf lastz-1.04.00.tar
+cd lastz-distrib-1.04.00/
+make
+make install
+# then I symlinked bin/lastz in my bin dir which is in my PATH
+
+
+# then again in: /u/home/e/eriq/nobackup-kruegg/programs
+wget http://www.bx.psu.edu/miller_lab/dist/multiz-tba.012109.tar.gz
+gunzip multiz-tba.012109.tar.gz
+tar -xvf multiz-tba.012109.tar
+cd multiz-tba.012109/
+make
+
+# then I symlinked single_cov2 and maf2fasta
+```
+
+Also we need to get the Okis genome in there.
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/genome
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/021/735/GCF_002021735.1_Okis_V1/GCF_002021735.1_Okis_V1_genomic.fna.gz
+mv GCF_002021735.1_Okis_V1_genomic.fna.gz Okis_V1_genomic.fna.gz
+gunzip Okis_V1_genomic.fna.gz 
+samtools faidx Okis_V1_genomic.fna
+```
+
+And, if we don't already have the chinook genome, get it:
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/genome
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/872/995/GCF_002872995.1_Otsh_v1.0/GCF_002872995.1_Otsh_v1.0_genomic.fna.gz
+mv GCF_002872995.1_Otsh_v1.0_genomic.fna.gz Otsh_V1_genomic.fna.gz
+gunzip Otsh_V1_genomic.fna.gz 
+samtools faidx Otsh_V1_genomic.fna
+```
+
+## Running the script
+
+The main script is in: `scripts/lastz-seed-and-chain.sh`.  On the cluster I was using
+I ran it like this:
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/outputs/200
+# we have this file:
+2018-10-19 21:02 /200/--% cat genome-align-job-list.txt 
+1	NC_037097.1	NC_034183.1 NC_034184.1 NC_034179.1
+2	NC_037098.1	NC_034174.1
+3	NC_037099.1	NC_034175.1 NC_034186.1
+4	NC_037100.1	NC_034176.1 NC_034181.1
+5	NC_037101.1	NC_034185.1 NC_034186.1
+6	NC_037102.1	NC_034177.1
+7	NC_037103.1	NC_034178.1 NC_034189.1
+8	NC_037104.1	NC_034187.1 NC_034188.1
+9	NC_037105.1	NC_034179.1 NC_034183.1
+10	NC_037106.1	NC_034189.1 NC_034203.1
+11	NC_037107.1	NC_034180.1 NC_034194.1
+12	NC_037108.1	NC_034176.1 NC_034181.1
+13	NC_037109.1	NC_034188.1 NC_034189.1 NC_034190.1
+14	NC_037110.1	NC_034189.1 NC_034190.1 NC_034191.1
+15	NC_037111.1	NC_034182.1 NC_034196.1
+16	NC_037112.1	NC_034174.1 NC_034190.1 NC_034191.1
+17	NC_037113.1	NC_034182.1 NC_034192.1
+18	NC_037114.1	NC_034194.1
+19	NC_037115.1	NC_034195.1
+20	NC_037116.1	NC_034196.1
+21	NC_037117.1	NC_034192.1
+22	NC_037118.1	NC_034197.1
+23	NC_037119.1	NC_034175.1 NC_034186.1
+24	NC_037120.1	NC_034193.1
+25	NC_037121.1	NC_034192.1 NC_034198.1
+26	NC_037122.1	NC_034199.1
+27	NC_037123.1	NC_034179.1 NC_034183.1
+28	NC_037124.1	NC_034200.1
+29	NC_037125.1	NC_034184.1 NC_034193.1
+30	NC_037126.1	NC_034201.1
+31	NC_037127.1	NC_034187.1
+32	NC_037128.1	NC_034174.1 NC_034193.1
+33	NC_037129.1	NC_034201.1 NC_034202.1
+34	NC_037130.1	NC_034185.1
+
+# and we make a job array file:
+#######################################################
+#!/bin/bash
+#$ -cwd
+#$ -V
+#$ -N lastz
+#$ -o lastz-$TASK_ID.log
+#$ -e lastz-$TASK_ID.error
+#$ -l h_data=6G,time=4:00:00
+#$ -M eric.anderson@noaa.gov
+#$ -t 1-34:1 
+#$ -m a
+
+
+#source /u/local/Modules/default/init/modules.sh
+#module load samtools
+
+# get the relevant line from the id file and store as a bash array,
+# then get the necessary parts of it
+IDFILE=genome-align-job-list.txt
+
+# launch the script with appropriate arguments
+/u/home/e/eriq/nobackup-kruegg/chinook-wgs/script/lastz-seed-and-chain-etc.sh \
+    $(awk -F"\t" -v N=$SGE_TASK_ID '$1==N {print $2}' $IDFILE) \
+    $(awk -F"\t" -v N=$SGE_TASK_ID '$1==N {print $2}' $IDFILE) \
+    "$(awk -F"\t" -v N=$SGE_TASK_ID '$1==N {print $3}' $IDFILE)"
+    
+####################################################################
+
+# launch that with:
+qsub lastz-job-array.sh
+```
+
+## Processing the output
+
+First, check the .diff files and confirm that the fasta file of the chinook sequence that
+we reconstituted from the .maf file, each time, is perfectly congruent with the original fasta.  They are.
+
+Now, I want to inspect the distribution of the DNA alignments.  First get the number of 
+sites that were "padded out" in the chinook genome (i.e. sites that got a "-" in the chinook
+genome, in order to align an adjacent piece in the coho genome (note that I filtered all of these out.))
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/outputs/200
+
+for i in NC_*; do  cat $i/step=20_notransition_inner=1000_identity=92.seqcnts | awk -v c=$i '$1=="-" {sum+=$NF;} END {print c,sum}'; done > step=20_notransition_inner=1000_identity=92.chinook_dashes
+
+```
+And now we can process the refcounts into a single file with a header:
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/outputs/200
+(echo boing | awk '{printf("chrom\tchinook\tcoho\tn\n")}'; for i in NC_*; do  cat $i/step=20_notransition_inner=1000_identity=92.refcounts | awk -v c=$i '!/ref/ {printf("%s\t%s\n", c,$0)}'; done)  > step=20_notransition_inner=1000_identity=92.all_chrom.refcounts
+
+
+```
+
+I copied those to stored_results/001.  Let's summarize these into a table:
+```{r, message=FALSE}
+bases <- c("a", "c", "g", "t", "A", "C", "G", "T")
+Ns <- c("n", "N")
+var_type <- function(x) {
+  ifelse(x %in% bases, "mono", 
+         ifelse(x %in% Ns, "N", 
+                ifelse(x == "-", "unaligned", "variable")))
+}
+cnts <- read_tsv("stored_results/001/step=20_notransition_inner=1000_identity=92.all_chrom.refcounts.gz") %>%
+  mutate(chinook_type = var_type(chinook),
+         coho_type = var_type(coho)) %>%
+  mutate(same = toupper(chinook) == toupper(coho)) 
+
+var_report <- cnts %>%
+  group_by(chrom, chinook_type, coho_type, same) %>%
+  summarise(N = sum(n)) %>% 
+  group_by(chrom)
+```
+
+Note that when each site was considered invariant in chinook and coho, they are the same site about 97.5% of the time:
+```{r}
+var_report %>% 
+  filter(chinook_type == "mono", coho_type == "mono") %>% 
+  group_by(chrom) %>% 
+  mutate(ppn = N / sum(N)) %>% 
+  filter(same == TRUE)
+```
+which sounds about right.  Cool.
+
+It would also be good to see how much of the chinook genome what is not Ns gets 
+aligned to Coho stuff that is either N or not N.  We can just sum this stuff up:
+```{r}
+aln_ppn <- var_report %>%
+  ungroup() %>%
+  filter(chinook_type != "N") %>%
+  mutate(coho = ifelse(coho_type == "N", "N", ifelse(coho_type == "unaligned", "unaligned", "aligned"))) %>%
+  group_by(chrom, coho) %>%
+  summarise(total = sum(N)) %>%
+  group_by(chrom) %>%
+  mutate(ppn = total/sum(total)) %>%
+  select(chrom, coho, ppn) %>%
+  spread(coho, ppn)
+ 
+aln_ppn
+```
+OK.  We range from about 50% to 70% alignment across these chromosomes.
+
+
+
+## Some other parameters
+
+Those runs were done with pretty insensitive parameters for speed.  I am now going to 
+see what sorts of results we get when we leave the parameters a little more sensitive---allow
+one transition in the seeding match (the default) and set the seed step size to 1.  
+This will take longer so I will give each run 24 hours (should be way more than it needs).
+
+Here we go:
+```sh
+# first 3
+2018-10-22 08:16 /200/--% qsub lastz-job-array.sh
+Your job-array 4059350.1-3:1 ("lastz") has been submitted
+
+# remainder
+2018-10-22 08:20 /200/--% qsub lastz-job-array.sh
+Your job-array 4059354.4-34:1 ("lastz") has been submitted
+
+```
+That actually didn't take that long.  Let's condense some results:
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/outputs/200
+for i in NC_*; do  cat  $i/step=1_transition_inner=1000_identity=92.seqcnts | awk -v c=$i '$1=="-" {sum+=$NF;} END {print c,sum}'; done > step=1_transition_inner=1000_identity=92.seqcnts
+
+ (echo boing | awk '{printf("chrom\tchinook\tcoho\tn\n")}'; for i in NC_*; do  cat $i/step=20_notransition_inner=1000_identity=92.refcounts | awk -v c=$i '!/ref/ {printf("%s\t%s\n", c,$0)}'; done)  > step\=1_transition_inner\=1000_identity\=92.all_chrom.refcounts
+ 
+```
+And now do some summaries:
+```{r, message=FALSE}
+bases <- c("a", "c", "g", "t", "A", "C", "G", "T")
+Ns <- c("n", "N")
+var_type <- function(x) {
+  ifelse(x %in% bases, "mono", 
+         ifelse(x %in% Ns, "N", 
+                ifelse(x == "-", "unaligned", "variable")))
+}
+cnts <- read_tsv("stored_results/001/step=1_transition_inner=1000_identity=92.all_chrom.refcounts.gz") %>%
+  mutate(chinook_type = var_type(chinook),
+         coho_type = var_type(coho)) %>%
+  mutate(same = toupper(chinook) == toupper(coho)) 
+
+var_report <- cnts %>%
+  group_by(chrom, chinook_type, coho_type, same) %>%
+  summarise(N = sum(n)) %>% 
+  group_by(chrom)
+
+var_report %>% 
+  filter(chinook_type == "mono", coho_type == "mono") %>% 
+  group_by(chrom) %>% 
+  mutate(ppn = N / sum(N)) %>% 
+  filter(same == TRUE)
+```
+Very similar proportions of DNA similarity...
+
+Here are the alignment proportions:
+```{r}
+aln_ppn2 <- var_report %>%
+  ungroup() %>%
+  filter(chinook_type != "N") %>%
+  mutate(coho = ifelse(coho_type == "N", "N", ifelse(coho_type == "unaligned", "unaligned", "aligned"))) %>%
+  group_by(chrom, coho) %>%
+  summarise(total = sum(N)) %>%
+  group_by(chrom) %>%
+  mutate(ppn = total/sum(total)) %>%
+  select(chrom, coho, ppn) %>%
+  spread(coho, ppn)
+ 
+aln_ppn2
+```
+
+Compare those
+```{r, message=FALSE}
+aln_ppn %>% 
+  rename(quick_aln = aligned) %>%
+  select(chrom, quick_aln) %>%
+  left_join(aln_ppn2) %>%
+  ggplot(., aes(x = quick_aln, y = aligned)) + 
+    geom_point() + 
+    geom_abline(slope = 1, intercept = 0, colour = "red")
+    
+```
+
+Effectively no difference there in the results, it appears.
+
+## Creating a coho "Ancestral refence genome file"
+
+To pick out the ancestral allele in ANGSD, we need to have a fasta file that is parallel
+to the Chinook fasta file, base-for-base. 
+
+Of course, here I have only dealt with the aligned chromosomes from Chinook.
+So, I will just catenate things into a single fasta for those chromosomes.
+
+Then I will pull those same chromosomes out of the chinook fasta and make
+sure we have the same number of characters in each case.
+
+```sh
+# in: /u/home/e/eriq/nobackup-kruegg/chinook-wgs/outputs/200
+
+# just pull the chromosome names out of the index and use those
+# to catenate all the anc.fna.gz into an uncompressed fna:
+zcat  $(awk '/^NW/ {exit} {printf ("%s/step=1_transition_inner=1000_identity=92.anc.fna.gz ", $1)}' /u/home/e/eriq/nobackup-kruegg/chinook-wgs/genome/Otsh_v1.0_genomic.fna.fai) > coho_34_chroms_as_ancestral.fna
+
+# word count that thing:
+wc coho_34_chroms_as_ancestral.fna 
+  29618285   29618285 1806712623 coho_34_chroms_as_ancestral.fna
+
+# bgzip it:
+module load htslib
+bgzip coho_34_chroms_as_ancestral.fna
+
+# now, let's faidx this:
+samtools faidx coho_34_chroms_as_ancestral.fna.gz 
+
+# check to see if it has the same number of characters as
+# the Chinook fasta with the first 34 chromosomes.
+samtools faidx /u/home/e/eriq/nobackup-kruegg/chinook-wgs/genome/Otsh_v1.0_genomic.fna  $(awk '/^NW/ {exit} {printf ("%s ", $1)}' /u/home/e/eriq/nobackup-kruegg/chinook-wgs/genome/Otsh_v1.0_genomic.fna.fai) | wc 
+29618285 29618285 1806712623
+
+# that is completely congruent with the first 35 chromosomes
+# in the chinook fasta, so that is looking good.
+
+# finally, copy the coho fna.gz and gzi to my gdrive
+# I put everything into a "genomes" folder and then copied it like this:
+rclone copy -v -P  genomes  gdrive-rclone:Chinook
+
+# that just put the contents into Chinook/
+# so, after that I added a genomes directory on google drive and
+# moved everything into there.
+
+```
+
+That is done.  For the purposes of the rest of the paper, we only need
+Chromosome 28 so we can define likely ancestral
+states in the region surrounding GREB1L.  
+
+To save space in this repository, we have just saved chromosome
+28 into `./stored_results/NC_037124.1_coho.fna.gz` and its indexes for future use.
+
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+
+# Citations
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

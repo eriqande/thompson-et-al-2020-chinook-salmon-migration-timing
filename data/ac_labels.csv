@@ -1,0 +1,11 @@
+ecotype,lineage,pop,ecotype_label,lineage_label,pop_label
+Fall,Klamath,Salmon_River,Fall Run,Klamath Basin,Salmon R.
+Fall,Klamath,Trinity_River_Hatchery,Fall Run,Klamath Basin,Trinity R.H.
+Fall,Sacto,Feather_River_Hatchery,Fall Run,Sacramento Basin,Feather R.H.
+Fall,Sacto,San_Joaquin_River,Fall Run,Sacramento Basin,San Joaquin R.
+Late_Fall,Sacto,Coleman_Hatchery,Late Fall,Sac. Basin,Battle Ck.
+Spring,Klamath,Salmon_River,Spring Run,Klamath Basin,S.R.
+Spring,Klamath,Trinity_River_Hatchery,Spring Run,Klamath Basin,Trinity R.H.
+Spring,Sacto,Butte_Creek,Spring Run,Sacramento Basin,Butte Ck.
+Spring,Sacto,Feather_River_Hatchery,Spring Run,Sacramento Basin,Feather R.H.
+Winter,Sacto,Sacramento_River,Winter,Sacramento Basin,Sac R. Winter

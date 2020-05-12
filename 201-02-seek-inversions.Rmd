@@ -1,0 +1,154 @@
+---
+title: "Seek Inversions from Mispaired and Split Reads"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# Packages and paths
+
+```{r, message=FALSE}
+library(tidyverse)
+
+
+dir.create("outputs/201", recursive = TRUE, showWarnings = FALSE)
+dir.create("intermediates/201", recursive = TRUE, showWarnings = FALSE)
+```
+
+
+# Read in and explore the results computed on the cluster
+
+```{r}
+depths <- read_tsv("stored_results/201/read-depths-by-base-pair-and-pair-type.tsv.gz") 
+
+d2 <- depths %>%
+  mutate(fall_mispair_ppn = fall.aberrant.bam / fall.2Mb.bam,
+         spring_mispair_ppn = spring.aberrant.bam / spring.2Mb.bam)
+
+```
+
+Now, plot those alongside one another.
+```{r}
+quick_lines <- function(d2) {
+  ggplot() +
+    geom_line(data = d2 %>% filter(!is.na(spring_mispair_ppn)), mapping = aes(x = POS, y = spring_mispair_ppn), colour = "gold") + 
+    geom_line(data = d2 %>% filter(!is.na(fall_mispair_ppn)), mapping = aes(x = POS, y = -fall_mispair_ppn), colour = "blue")
+}
+
+mp <- quick_lines(d2)
+
+ggsave(mp, filename = "outputs/201/mispair_spring_v_fall.png", width = 15, height = 7)
+
+mp
+```
+
+
+So, those are quite symmetrical.  What we need to do here is filter
+the results down to cases where we have at least a read depth of X and
+a one of fall or spring prortion being greater than P while the absolute difference
+between then two is at least D:
+```{r}
+filt_rd <- function(data, X, P, D) {
+  data %>%
+    filter((fall.2Mb.bam > X | spring.2Mb.bam > X) &
+             (spring_mispair_ppn > P | fall_mispair_ppn > P) & 
+             (abs(spring_mispair_ppn - fall_mispair_ppn) > D)
+    )
+}
+```
+
+First just try filtering:
+```{r}
+filt1 <- filt_rd(d2, 35, 0.8, 0.5)
+
+# that suggests a single interesting region:
+filt1 %>% select(POS, starts_with("fall"), starts_with("spring"))
+
+```
+
+That is one spot where the falls have plenty of reads aligning, but the springs have very few
+(only 1 or two).
+However, all of the reads aligning in springs are mispaired.   
+
+It turns out that is the exception that proves the rule.  That segment is a 22-bp deletion carried
+on the $E$-lineage haplotype---it isn't an indication of an inversion of any sort. 
+
+# Now, look for split reads
+
+```{r}
+dsplit <- depths %>%
+  mutate(fall_split_ppn = fall.split_reads.bam / fall.2Mb.bam,
+         spring_split_ppn = spring.split_reads.bam / spring.2Mb.bam)
+```
+
+
+And plot those all along the 2 Mb:
+```{r}
+split_ppn <- ggplot() +
+    geom_line(data = dsplit %>% filter(!is.na(spring_split_ppn)), mapping = aes(x = POS, y = spring_split_ppn), colour = "gold") + 
+    geom_line(data = dsplit %>% filter(!is.na(fall_split_ppn)), mapping = aes(x = POS, y = -fall_split_ppn), colour = "blue")
+
+ggsave(split_ppn, filename = "outputs/201/split_read_ppn_spring_v_fall.png", width = 15, height = 7)
+
+split_ppn
+```
+
+That looks a lot like the mispaired reads plot.  So, let's filter down in the same way
+and see if we find any that are really different between falls and springs.
+```{r}
+filt_for_splits <- function(data, X, P, D) {
+  data %>%
+    filter((fall.2Mb.bam > X | spring.2Mb.bam > X) &
+             (spring_split_ppn > P | fall_split_ppn > P) & 
+             (abs(spring_split_ppn - fall_split_ppn) > D)
+    )
+}
+
+
+filt2 <- filt_for_splits(dsplit, 35, 0.7, 0.3)
+
+filt2
+```
+
+This indicates two regions worth following up on. One is at POS = 12,234,265.
+The other is a range from 12,332,752-12,332,787.
+
+POS = 12,234,265 is in the middle of a deletion (from 21 to 27 bp in various individuals),
+and there are a handful of reads from springers that span that deletion and also
+have supplementary alignments (most on different chromosomes, and no clusters to
+other nearby locations on Chr. 28).  Conclusion = this is not an indication of an inversion.
+
+As for 12,332,752-12,332,787, looking at this in IGV,
+there are very few reads mapping there from spring run, and those
+that do have very low MAPQs.  The supplemental alignments are not to a consistent
+location on Chr 28, so there seems no way these could indicate an inversion breakpoint in this
+region.
+
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+

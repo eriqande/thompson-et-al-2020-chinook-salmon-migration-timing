@@ -1,0 +1,338 @@
+---
+title: "ARG inference with RENT+"
+author: "Eric C. Anderson"
+date: "Last Updated: `r Sys.Date()`"
+output: 
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+bibliography: references.bib
+---
+
+
+Here we infer the ancestral recombination graph with RENT+ [@mirzaei2016rentplus]
+and then make a nice plot with 'ggtree' [@yuGgtreePackageVisualization2017]
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# Packages and paths 
+```{r}
+library(tidyverse)
+library(ape)
+library(ggtree)
+
+dir.create("outputs/007", recursive = TRUE, showWarnings = FALSE)
+dir.create("intermediates/007", recursive = TRUE, showWarnings = FALSE)
+
+source("R/function_prep_elements.R")
+```
+
+# Load up needed data from previous steps
+
+```{r}
+big_haps2 <- read_rds(path = "outputs/004/big_haps2.rds")
+```
+
+
+
+
+# Prep data for RENT+ and run it
+
+Unfortunately, RENT+ does not seem to have a way to specify ancestral and
+derived alleles if you happen to know them [see @mirzaei2016rentplus, p 1024].
+So we just make the non-spring associated alleles 0 and the others 1.
+
+We will also run this on a 500 Kb chunk around GREB1L/ROCK1.
+```{r}
+plist <- prep_elements(12.1e6, 12.6e6, 0.05e6, format = "%.2f", Return_D_only = TRUE)
+
+# Let's call the fall-associated allele 0 and the spring-associated allele 1
+for_input <- plist$D %>%
+  arrange(ecotype, lineage, pop, Indiv, haplo, haplo_name, POS) %>%
+  group_by(ecotype, lineage, pop, Indiv, haplo, haplo_name) %>%
+  mutate(zeroone = ifelse(alle2 == "F", 0L, 1L)) %>%
+  summarise(int_string = paste(zeroone, collapse = "")) %>%
+  ungroup() %>%
+  mutate(index = 1:n()) %>%
+  select(index, everything())
+
+# now we can write that out
+cat(sort(unique(plist$D$POS)), file = "intermediates/007/rent-input.txt", sep = " ", eol = "\n")
+cat(for_input$int_string, sep = "\n", file = "intermediates/007/rent-input.txt", append = TRUE, eol = "\n")
+
+
+```
+
+Now, let's try running that dude:
+```{sh}
+source script/java-jar-paths.sh
+
+echo "Using RentPlus jar at: $RentPlus"
+
+cd intermediates/007
+java -jar $RentPlus -t rent-input.txt > rent-input.txt.stdout 2> rent-input.txt.stderr 
+
+awk '{print $0";"}' rent-input.txt.trees  > rent-input.txt.ape-readable
+```
+That turns out to take about five minutes.
+
+### Read those trees in and plot them
+
+```{r}
+tree_positions <- read_table2("intermediates/007/rent-input.txt.trees",
+                              col_names = c("POS", "tree")) %>%
+  select(POS)
+
+all_trees <- read.tree("intermediates/007/rent-input.txt.ape-readable")
+names(all_trees) <- tree_positions$POS
+
+tmrcas <- read_table2("intermediates/007/rent-input.txt.Tmrcas", col_names = "Tmrca") %>%
+  bind_cols(tree_positions, .)
+```
+
+Let's plot the local tree at position 12267547, which is one of our ROSA microhaplotype SNPs.
+```{r}
+p <- ggtree(all_trees[["12267547"]]) %<+%
+  for_input +
+  scale_shape_manual(values = c(1, 19)) +
+  theme(legend.position="right") # +
+
+print(p)
+```
+
+Before we go further, I want to make a tree that has node labels so that 
+I can look at those and use them for selecting different groups of haplotypes.
+```{r}
+p_node_labels <- p +
+  geom_text2(aes(subset=!isTip, label=node), hjust=-.3) + 
+  geom_tiplab()
+
+print(p_node_labels)
+```
+
+
+Now, let's add an ultra-zoom heatmap to it.
+```{r}
+# first get the haplotype data.
+long_ultra1 <- prep_elements(12.26e6, 12.29e6, 0.02e5, format = "%.3f", Return_D_only = TRUE)$D
+```
+
+
+To annotate each haplotype, figure out if it occurs in a fish that is heterozygous or not. We do that
+by counting up number of springer alleles on each haplotype. 
+
+First look at that distribution, and see that the haplotypes
+cluster into two groups on the basis of number of alleles
+most common amongst spring run fish.
+```{r}
+Ssums <- long_ultra1 %>%
+  group_by(haplo_name, Indiv, pop, ecotype, lineage) %>%
+  summarise(NumSs = sum(alle2 == "S"))
+
+ggplot(Ssums, aes(x = NumSs, fill = ecotype)) +
+  geom_histogram()
+```
+Pretty clearly 126 is a good dividing line. So, we can define heterozygotes
+on that basis, and we will also record population and basin.
+```{r}
+# so, again, 126 is the sweetspot.
+seq_meta <- Ssums %>%
+  group_by(Indiv) %>%
+  mutate(inHetFish = any(NumSs < 125) & any(NumSs >= 125)) %>%
+  mutate(Ecotype = recode(
+    ecotype,
+      "Fall" =  "Fall Run",
+      "Spring" =  "Spring Run",
+      "Late Fall" =  "Late Fall Run",
+      "Winter" =  "Winter Run"
+    )) %>%
+  mutate(Population = recode(
+      pop,
+      "Salmon_River" =  "Salmon R.",
+      "Feather_River_Hatchery" =  "Feather R.H.",
+      "Trinity_River_Hatchery" =  "Trinity R.H.",
+      "San_Joaquin_River" =  "San Joaquin R.",
+      "Coleman_Hatchery" =  "Coleman H.",
+      "Sacramento_River" =  "Sacramento R. Winter Run",
+      "Butte_Creek" =  "Butte Ck."
+    )) %>%
+  mutate(Basin = recode(
+    lineage,
+    "Sacto" = "Sacramento Basin",
+    "Klamath" = "Klamath Basin"
+  ))
+  
+```
+
+
+### Continuing with tree building
+
+Now we can make a matrix of values where each value takes up
+7 columns, and then there will be a space.  We will make this as a list which
+we can pass to cbind().
+```{r}
+col_width <- 15
+extra_mats <- list(
+  ecotype = matrix(rep(seq_meta$Ecotype, each = col_width), byrow = TRUE, ncol = col_width),
+#  sep1 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
+  het = matrix(rep(ifelse(seq_meta$inHetFish == TRUE, "Heterozygous", "Homozygous"), each = col_width),
+             byrow = TRUE,
+             ncol = col_width),
+#  sep2 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
+  basin = matrix(rep(seq_meta$Basin, each = col_width), byrow = TRUE, ncol = col_width),
+#  sep3 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
+#  pop = matrix(rep(seq_meta$Population, each = col_width), byrow = TRUE, ncol = col_width),
+  sep4 = matrix(rep(NA, 3 * nrow(seq_meta)), ncol = 3)
+) %>%
+  do.call(cbind, .)
+
+rownames(extra_mats) <- seq_meta$haplo_name
+```
+
+
+```{r}
+ultra1 <-  long_ultra1 %>%
+  select(haplo_name, POS, atypes) %>%
+  spread(POS, atypes)
+
+ultra_mat <- as.matrix(ultra1[,-1])
+rownames(ultra_mat) <- ultra1$haplo_name
+
+ultra_sorted <- ultra_mat[for_input$haplo_name, ]
+rownames(ultra_sorted) <- 1:nrow(ultra_sorted)
+
+extra_sorted <- extra_mats[for_input$haplo_name, ]
+rownames(extra_sorted) <- 1:nrow(extra_sorted)
+colnames(extra_sorted) <- 1:ncol(extra_sorted)
+
+combo_mat <- cbind(extra_sorted, ultra_sorted)
+
+source("R/define_fcolors_all_sf.R")
+fcolors_all_sf["Homozygous"] <- "black"
+
+heat <- gheatmap(p, combo_mat, 
+                 offset= 0.2, 
+                 width=0.8, 
+                 font.size=0.8, 
+                 colnames_angle=-45, 
+                 hjust=0, color = NA) +
+    scale_fill_manual(values = fcolors_all_sf) +
+  theme(legend.position = "none")
+
+heat2 <- heat +
+  expand_limits(x = 27, y = 341) + 
+  annotate("text", x = 96, y = 296, label = "Ecotype of Fish", size = 11, hjust = 1, angle = -45) +
+  annotate("text", x = 100.5, y = 296, label = "Fish RoSA Zygosity", size = 11, hjust = 1, angle = -45) +
+  annotate("text", x = 105, y = 296, label = "Basin/Lineage", size = 11, hjust = 1, angle = -45) +
+  annotate("text", x = 109, y = 299, label = "202 Variants on Chromosome 28 (12.26 to 12.29 Mb)", size = 10, hjust = 0)
+#  annotate("text", x = 113, y = 296, label = "Population", size = 12, hjust = 1, angle = -45)
+
+# now, in order to get a legend like I would like to have, I think I am going to have
+# to put it on there manually
+ectx <- 45 #10
+fhx <-  80 # 45
+blx <-  112   # 80
+px <- 112
+p1x <- 112
+p2x <- 131
+ty <- -16
+ystep <- 5
+rsize <- 3
+xnudge <- 1
+
+heat3 <- heat2 +
+  expand_limits(x = 27, y = -14) +
+  annotate("text", x = ectx, y = ty, size = 12, hjust = 0, label = "Ecotype of Fish") +
+  annotate("text", x = fhx, y = ty, size = 12, hjust = 0, label = "Fish RoSA Zygosity") +
+  annotate("text", x = blx, y = ty, size = 12, hjust = 0, label = "Basin/Lineage") +
+  #annotate("text", x = px, y = ty, size = 12, hjust = 0, label = "Population") +
+  #
+  # Now the Ecotype colors
+  #
+  annotate("rect", xmin = ectx, xmax = ectx + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "blue", colour = "black", size = 0.1) +
+  annotate("text", x = ectx + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Fall Run") +
+  annotate("rect", xmin = ectx, xmax = ectx + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#a6cee3", colour = "black", size = 0.1) +
+  annotate("text", x = ectx + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Late Fall Run") +
+  annotate("rect", xmin = ectx, xmax = ectx + rsize, ymin = ty - ystep * 7, ymax = ty - ystep * 6, fill = "#ffff99", colour = "black", size = 0.1) +
+  annotate("text", x = ectx + rsize + xnudge, y = ty - ystep * 6.5, size = 9, hjust = 0, vjust = 0.5, label = "Winter Run") +
+  annotate("rect", xmin = ectx, xmax = ectx + rsize, ymin = ty - ystep * 9, ymax = ty - ystep * 8, fill = "gold", colour = "black", size = 0.1) +
+  annotate("text", x = ectx + rsize + xnudge, y = ty - ystep * 8.5, size = 9, hjust = 0, vjust = 0.5, label = "Spring Run") +
+  #
+  # Now the Heterozygous colors
+  #
+  annotate("rect", xmin = fhx, xmax = fhx + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "tan2", colour = "black", size = 0.1) +
+  annotate("text", x = fhx + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Heterozygous") +
+  annotate("rect", xmin = fhx, xmax = fhx + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "black", colour = "black", size = 0.1) +
+  annotate("text", x = fhx + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Homozygous") +
+  #
+  # Now the Basin colors
+  #
+  annotate("rect", xmin = blx, xmax = blx + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#de2d26", colour = "black", size = 0.1) +
+  annotate("text", x = blx + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Sacramento Basin") +
+  annotate("rect", xmin = blx, xmax = blx + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#74c476", colour = "black", size = 0.1) +
+  annotate("text", x = blx + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Klamath Basin") #+
+  #
+  # First column of Pop stuff (Klamath)
+  #
+  # annotate("rect", xmin = p1x, xmax = p1x + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#238b45", colour = "black", size = 0.1) +
+  # annotate("text", x = p1x + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Trinity R.H.") +
+  # annotate("rect", xmin = p1x, xmax = p1x + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#bae4b3", colour = "black", size = 0.1) +
+  # annotate("text", x = p1x + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Salmon R.") +
+  # #
+  # # Finally, the last column of populations
+  # #
+  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#a50f15", colour = "black", size = 0.1) +
+  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Sacramento R. Winter Run") +
+  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#fb6a4a", colour = "black", size = 0.1) +
+  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "San Joaquin R.") +
+  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 7, ymax = ty - ystep * 6, fill = "#fc9272", colour = "black", size = 0.1) +
+  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 6.5, size = 9, hjust = 0, vjust = 0.5, label = "Butte Ck.") +
+  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 9, ymax = ty - ystep * 8, fill = "#fcbba1", colour = "black", size = 0.1) +
+  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 8.5, size = 9, hjust = 0, vjust = 0.5, label = "Coleman H.") +
+  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 11, ymax = ty - ystep * 10, fill = "#fee5d9", colour = "black", size = 0.1) +
+  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 10.5, size = 9, hjust = 0, vjust = 0.5, label = "Feather R.H.")
+  
+
+ggsave(heat3, filename = "outputs/007/ultra-heatmap.pdf", width = 30, height = 20)
+```
+
+To make the final figure for the paper, we used Inkscape to chop an equal-sized chunk
+out of each long branch and placed it atop the figure so that the figure did not include
+too much unused real estate.
+
+
+# Write out some data for later
+
+We have Shiny App to visualize changes in the local coalescent trees within the RoSA.
+Here, we will write out what turns out to be the input for that into an rda and store it
+with the repo so anyone with RStudio can make that Shiny App.  We retain the trees that extend
+from our left-most RoSA SNP assay to our right-most RoSA SNP assay
+
+```{r}
+dir.create("coalescent-tree-shiny-app/data", showWarnings = FALSE, recursive = TRUE)
+all_trees <- all_trees[as.integer(names(all_trees)) >= 12267547 & as.integer(names(all_trees)) <= 12281401 ]
+save(for_input, all_trees, seq_meta, file = "coalescent-tree-shiny-app/data/coal-trees-etc-for-shiny.rda", compress = "xz")
+```
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
+# Citations
+

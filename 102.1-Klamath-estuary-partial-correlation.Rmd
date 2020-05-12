@@ -1,0 +1,103 @@
+---
+title: "102.1-klamath-estuary-partial-correlation"
+author: "Neil Thompson"
+date: "Last Updated: `r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# Partial correlation analyses of maturation status and adiposity with fixed effects
+
+```{r}
+library(tidyverse)
+library(ppcor)
+```
+
+1. load RoSA data for estuary samples
+```{r load-data}
+rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
+
+klaten_nomiss <- rosa_data %>% distinct(Indiv,.keep_all=T) %>%
+  filter(!str_detect(rosa,"\\?"))
+```
+
+There are `r nrow(klaten_nomiss)` at-entry estuary samples with 100% complete genotypes. There are `r nrow(rosa_data)` Klamath at-entry estuary samples.
+
+2. load metadata for estuary samples. Join RoSA data to the metadata.
+```{r metadata-pull}
+estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
+rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+  dplyr::select(-ID) %>%
+  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  dplyr::select(NMFS_DNA_ID, rosa, everything())
+```
+
+Make dataframe to calculate partial correlations from.
+```{r df-for-partial-correlations}
+rosa_stats <- rosa_meta %>%
+  filter(!str_detect(rosa,"\\?"),
+         rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL")) %>% #remove samples with missing data and recombinant genotypes
+  mutate(log_jday = log(julian),
+         rosa_f = as.numeric(factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL"))),
+         year_f = as.numeric(factor(year, levels =c("2009","2010"))),
+         sex_f =as.numeric(factor(sex, levels=c("f","m")))) 
+
+str(rosa_stats)
+```
+
+
+partial correlation between fatness and sampling date controlling for RoSA, year and sex.
+```{r fatness-partial-correlation-julianday}
+pcor.test(rosa_stats$drywet, rosa_stats$julian, rosa_stats[,c("rosa_f","year_f", "sex_f")]) #-0.255
+```
+
+partial correlation between GSI and sampling date controlling for RoSA, year and sex.
+```{r, gonadsi-partial-correlation-julianday}
+pcor.test(rosa_stats$gsi, rosa_stats$julian, rosa_stats[,c("rosa_f","year_f", "sex_f")]) # 0.533
+```
+
+
+Partial correlation analysis between fatness and RoSA genotype, controlling for sex, and year as fixed effects.
+
+```{r fatness-partial-correlation-rosa}
+pcor.test(rosa_stats$drywet, rosa_stats$rosa_f, rosa_stats[,c("julian","year_f", "sex_f")]) #0.079
+```
+
+Partial correlation analysis between GSI and RoSA genotype, controlling for sex, and year as fixed effects.
+```{r gonadsi-partial-correlation-rosa}
+pcor.test(rosa_stats$gsi, rosa_stats$rosa_f, rosa_stats[,c("julian","year_f", "sex_f")]) #-0.096
+```
+
+Little correlation between RoSA genotype and adiposity or maturation status. This is a less formal test that RoSA has little influence on the physiological traits thought to be central to the spring-run and fall-run ecotype differentiation.
+
+
+
+Partial correlations using log(julian_day) instead of julian day. I doubt this will change much of anything, but log(julian_day) is the predictor variable we used in the mixed effects model selection analyses.
+```{r fatness-partial-correlation-logjulian}
+pcor.test(rosa_stats$drywet, rosa_stats$log_jday, rosa_stats[,c("rosa_f","year_f", "sex_f")]) #-0.242
+
+pcor.test(rosa_stats$gsi, rosa_stats$log_jday, rosa_stats[,c("rosa_f","year_f", "sex_f")]) # 0.476
+```
+As suspected, those partial correlations are not very different from the partial correlations using julian day.
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```

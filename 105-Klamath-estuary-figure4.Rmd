@@ -1,0 +1,311 @@
+---
+title: "RoSA manuscript fig4 gonadsi fatness entry timing"
+author: "Neil Thompson"
+date: "Last Updated: `r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+start_time <- Sys.time()
+```
+
+# Code to recreate fig 4 in the RoSA ms
+
+This is going to be a multi panel figure. The estuary sampling date in the left panel (full height) with the gonadsi and fatness data in the right panel.
+
+```{r}
+library(tidyverse)
+library(cowplot)
+dir.create("outputs/105", recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r load-data}
+rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
+
+estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
+
+rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+  dplyr::select(-ID) %>%
+  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  dplyr::select(NMFS_DNA_ID, rosa, everything())
+```
+
+Remove all samples with ANY missing data. And the recombinant genotypes.
+
+```{r}
+rosa_plot <- rosa_meta %>%
+  filter(!str_detect(rosa,"\\?"),
+         rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL"))
+```
+
+
+```{r gonadsi-all-haplotypes-figure}
+sex_names <- list(
+  'f'="Female",
+  'm'="Male",
+  "EEEEEEEE"="EE",
+  "HHHHHHHH"="EL",
+  "LLLLLLLL"="LL"
+)
+
+sex_labeller <- function(variable,value){
+  return(sex_names[value])
+}
+
+rosa_meta %>%
+  filter(!str_detect(rosa,"\\?")) %>% 
+  mutate(comp_geno = factor(rosa,levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL"))) %>%
+ggplot(.,aes(x = julian,y = gsi,fill = comp_geno,colour=comp_geno)) + 
+  geom_point() +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Gonadosomatic Index") +
+  scale_fill_discrete(name = "Genotype") + 
+  scale_colour_discrete(name = "Genotype") +
+  theme_bw() +
+  scale_x_continuous(breaks=c(121,152,182,213,244,274,305),labels=c("May-01","June-01",
+                                                            "July-01","Aug-01","Sept-01","Oct-01","Nov-01"))+
+    theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),axis.text.x = element_text(angle = 45, hjust = 1), strip.background = element_blank()) + 
+  facet_grid(.~sex, labeller=sex_labeller)
+```
+
+# recreate plot from above with recombinant genotypes.
+```{r gonadsi-non-recombinant-figure}
+gonadsi_figure <- rosa_plot %>%
+  mutate(comp_geno = factor(rosa,levels = c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
+ggplot(.,aes(x = julian,y = gsi,fill = comp_geno,colour=comp_geno)) + 
+  geom_point(alpha=0.75) +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Gonadosomatic Index") +
+  scale_fill_discrete(name = "Genotype") + 
+  scale_colour_manual(name = "Genotype",values=c("gold", "tan2", "blue"),labels=c("EE","EL","LL")) +
+  theme_bw() +
+  scale_x_continuous(limits = c(121,305),breaks=c(121,152,182,213,244,274,305),labels = c("", "","","","", "",""))+
+  scale_y_continuous(breaks=c(0,0.05,0.10,0.15),labels = c(0,0.05,0.10,0.15), limits=c(0,0.16), position="right")+
+    theme(axis.text = element_text(size = 12, family="serif"),
+        axis.title = element_text(size = 12, family="serif"),axis.text.x = element_text(angle = 45, hjust = 1, family="serif"), 
+        strip.background = element_blank(),legend.position = "none",
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(), strip.text.x = element_text(size=14, family="serif"),plot.margin = unit(c(0, 0,0,0), "lines")) + 
+  facet_grid(.~sex, labeller=sex_labeller)
+
+gonadsi_figure
+```
+
+Now lets do that with the fatness data
+```{r fatness-non-recombinant-figure}
+fatness_figure <- rosa_plot %>%
+  mutate(comp_geno = factor(rosa,levels = c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
+ggplot(.,aes(x = julian,y = drywet,fill = comp_geno,colour=comp_geno)) + 
+  geom_point(alpha=0.75) +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Liver NWF") +
+  scale_fill_discrete(name = "Genotype") + 
+  scale_colour_manual(name = "Genotype",values=c("gold", "tan2", "blue"),labels=c("EE","EL","LL")) +
+   theme_bw() +
+  scale_x_continuous(limits = c(121,305),breaks=c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov"))+
+  scale_y_continuous(position="right")+
+    theme(axis.text = element_text(size = 12, family="serif"),
+        axis.title = element_text(size = 14, family="serif"),axis.text.x = element_text(angle = 45, hjust = 1, family="serif"), 
+        strip.background = element_blank(),legend.position = "none",
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        strip.text.x = element_blank(),plot.margin = unit(c(-0.5, .2, 0.2, 0.2), "lines")) + 
+  facet_grid(.~sex, labeller=sex_labeller)
+
+fatness_figure
+```
+
+Make the estuary date by RoSA genotype figure.
+```{r}
+entry_figure <- rosa_plot %>%
+  mutate(comp_geno = factor(rosa,levels = c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
+  ggplot(.,aes(x = julian,fill = comp_geno)) + 
+  geom_bar(stat = "count", width = 1,position = "dodge") +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Count") +
+  scale_fill_manual(values=c("gold", "tan2", "blue"),
+                     breaks=c("EEEEEEEE","HHHHHHHH","LLLLLLLL"),
+                         labels=c("EE", "EL", "LL"),
+                     name="RoSA genotype") + 
+  theme_bw() +
+ background_grid(major = "xy", minor = "none") +
+  scale_x_continuous(limits = c(121,305), breaks = c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov")) +
+  scale_y_continuous(limits = c(0,30))+
+    theme(axis.text = element_text(size = 12, family = "serif"),
+        axis.title = element_text(size = 14, family = "serif"),axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"), 
+        strip.background = element_blank(),strip.text.y = element_blank(),legend.position = "none",
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  facet_grid(comp_geno~.)
+
+entry_figure
+```
+
+Need to harvest a legend from one of the plots
+
+```{r}
+entry_figure_legend <- rosa_plot %>%
+  mutate(comp_geno = factor(rosa,levels = c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
+  ggplot(.,aes(x = julian,fill = comp_geno)) + 
+  geom_bar(stat = "count", width = 1,position = "dodge") +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Count") +
+  scale_fill_manual(values=c("gold", "tan2", "blue"),
+                     breaks=c("EEEEEEEE","HHHHHHHH","LLLLLLLL"),
+                         labels=c("EE", "EL", "LL"),
+                     name="RoSA genotype") + 
+  theme_bw()  +
+ background_grid(major = "xy", minor = "none") +
+  scale_x_continuous(limits = c(121,305), breaks = c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov")) +
+  scale_y_continuous(limits = c(0,30))+
+    theme(axis.text = element_text(size = 12, family = "serif"),
+        axis.title = element_text(size = 14, family = "serif"),axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"), 
+        strip.background = element_blank(),strip.text.y = element_blank(),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                         legend.text = element_text(size = 10, family = "serif"),
+                                         legend.title = element_text(size = 10, family = "serif"),legend.key.size = unit(1,"line")) + 
+  facet_grid(comp_geno~.)
+
+legend <- get_legend(entry_figure_legend+ theme(legend.position="top",legend.direction="horizontal"))
+```
+
+
+## cowplot em together
+```{r cowplot-together}
+library(cowplot)
+pheno_traits <- plot_grid(gonadsi_figure,fatness_figure , labels = c("B", "C"), ncol=1, align = "v", label_y=c(0.85,1.05))
+entry_trait<-plot_grid(entry_figure,ncol=1, labels=c("A")) 
+all_panel<-plot_grid(entry_trait,pheno_traits, ncol = 2, align = "hv", rel_widths = c(0.75,1))
+
+plot_grid(legend, all_panel,ncol=1, rel_heights=c(0.05, 1))
+ggsave("./outputs/105/RoSA_figure4_multipanel_estuary_gonadsi_fatness.pdf", width=7.5, height=4)
+ggsave("./outputs/105/RoSA_figure4_multipanel_estuary_gonadsi_fatness.png", width=7.5, height=4)
+```
+
+
+Make a supplemental entry date figure showing all recombinants
+
+```{r entry-date-supplement}
+rosa_meta %>%
+  filter(!str_detect(rosa,"\\?")) %>% 
+  mutate(comp_geno = factor(rosa,levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL"))) %>% 
+  ggplot(.,aes(x = julian,fill = comp_geno)) + 
+  geom_bar(stat = "count", width = 1,position = "dodge") +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Count") +
+  scale_fill_manual(values=c("gold", "tan2", "blue","black","black"),
+                     breaks=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL"),
+                     name="RoSA genotype") + 
+  theme_bw() +
+ background_grid(major = "xy", minor = "none") +
+  scale_x_continuous(limits = c(121,305), breaks = c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov")) +
+  scale_y_continuous(limits=c(0,20), breaks = seq(0,20,5), labels = seq(0,20,5))  +
+    theme(axis.text = element_text(size = 12, family = "serif"),
+        axis.title = element_text(size = 14, family = "serif"),axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"), 
+        strip.background = element_blank(),strip.text.y = element_text(size=8),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none") + 
+  facet_grid(comp_geno~ year) +ggtitle("all RoSA genotypes by estuary sampling date")
+```
+
+
+Make a supplemental gonadsi figure showing all recombinants
+```{r}
+all_nads_09 <-  rosa_meta %>%
+  filter(!str_detect(rosa,"\\?"),
+         year=="2009") %>% 
+  mutate(hapstr = factor(rosa,levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL")),
+         sex = str_replace(sex,"f","Female"),
+         sex = ifelse(sex=="m","Male",sex)) %>% 
+  ggplot(.,aes(x = julian,y=gsi,fill = hapstr,colour=hapstr)) + 
+  geom_point() +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Gonadosomatic Index") +
+  scale_color_manual(values=c("gold", "tan2", "blue","black","black"),
+                     breaks=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL"),
+                     name="RoSA genotype")+ 
+  theme_bw() +
+  scale_x_continuous(limits = c(121,305), breaks = c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov")) +
+  scale_y_continuous(breaks=c(0,0.05,0.10,0.15),labels = c(0,0.05,0.10,0.15), limits=c(0,0.16))  +
+    theme(axis.text = element_text(size = 12, family = "serif"),
+        axis.title = element_text(size = 14, family = "serif"),axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"), 
+        strip.background = element_blank(),strip.text.y = element_text(size=8),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none") + 
+  facet_grid(hapstr ~ sex)+ggtitle("2009")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+
+all_nads_10 <-  rosa_meta %>%
+  filter(!str_detect(rosa,"\\?"),
+         year=="2010") %>% 
+  mutate(hapstr = factor(rosa,levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL")),
+         sex = str_replace(sex,"f","Female"),
+         sex = ifelse(sex=="m","Male",sex)) %>%
+  ggplot(.,aes(x = julian,y=gsi,fill = hapstr,colour=hapstr)) + 
+  geom_point() +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Gonadosomatic Index") +
+  scale_color_manual(values=c("gold","tan2", "blue"),
+                     breaks=c("EEEEEEEE","HHHHHHHH","LLLLLLLL"),
+                     name="RoSA genotype") + 
+  theme_bw() +
+  scale_x_continuous(limits = c(121,305), breaks = c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov")) +
+  scale_y_continuous(breaks=c(0,0.05,0.10,0.15),labels = c(0,0.05,0.10,0.15), limits=c(0,0.16))  +
+    theme(axis.text = element_text(size = 12, family = "serif"),
+        axis.title = element_text(size = 14, family = "serif"),axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"), 
+        strip.background = element_blank(),strip.text.y = element_text(size=8),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none") + 
+  facet_grid(hapstr ~ sex) +ggtitle("2010")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_grid(all_nads_09,all_nads_10)
+
+#ggsave("./outputs/RoSA_klamath_estuary_gonadsi_supplemental_all_haplos_byYear.pdf", width=11, height=8)
+#ggsave("./outputs/RoSA_klamath_estuary_gonadsi_supplemental_all_haplos_byYear.png", width=11, height=8)
+```
+
+now fatness supplemental
+```{r}
+  rosa_meta %>%
+  filter(!str_detect(rosa,"\\?")) %>% 
+  mutate(hapstr = factor(rosa,levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL")),
+         sex = str_replace(sex,"f","Female"),
+         sex = ifelse(sex=="m","Male",sex)) %>%
+  ggplot(.,aes(x = julian,y = drywet,colour=hapstr)) + 
+  geom_point() +
+  xlab(label = "Estuary sampling date") +
+  ylab(label = "Liver NWF") +
+  scale_color_manual(values=c("gold", "tan2", "blue","black","red"),
+                     breaks=c("EEEEEEEE","HHHHHHHH","LLLLLLLL", "HHHEEEEE","LLLLHHLL"),
+                     name="RoSA genotype")  +
+   theme_bw() +
+  scale_x_continuous(limits = c(121,305),breaks=c(121,152,182,213,244,274,305),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov"))+
+    theme(axis.text = element_text(size = 12, family="serif"),
+        axis.title = element_text(size = 14, family="serif"),axis.text.x = element_text(angle = 45, hjust = 1, family="serif"), 
+        strip.background = element_blank(),#legend.position = "none",
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        plot.margin = unit(c(0, .2, 0.2, 0.2), "lines")) + 
+  facet_grid(year~sex)
+ggsave("./outputs/105/RoSA_klamath_estuary_fatness_supplemental_all_haplos_byYear.pdf", width=6, height=4)
+ggsave("./outputs/105/RoSA_klamath_estuary_fatness_supplemental_all_haplos_byYear.png", width=6, height=4)
+```
+
+
+# Session Info
+
+```{r}
+sessioninfo::session_info()
+```
+
+# Running Time
+
+Running the code and rendering this notebook required approximately this much time
+on a Mac laptop of middling speed:
+```{r}
+Sys.time() - start_time
+```
+
