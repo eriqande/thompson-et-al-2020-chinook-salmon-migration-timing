@@ -9,7 +9,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
-<meta name="author" content="Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza" />
+<meta name="author" content="Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza" />
 
 
 <title>Thompson et. al. 2020, Data and Code Repository</title>
@@ -1510,13 +1510,15 @@ div.tocify {
 
 
 <h1 class="title toc-ignore">Thompson et. al. 2020, Data and Code Repository</h1>
-<h4 class="author">Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza</h4>
+<h4 class="author">Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza</h4>
 
 </div>
 
 
 <p><strong>Last Updated:</strong> 2020-05-12</p>
+<p><a href="https://zenodo.org/badge/latestdoi/263405637"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciCiAgICAgd2lkdGg9IjE4NiIgaGVpZ2h0PSIyMCI+CiAgICAgICAgPGxpbmVhckdyYWRpZW50IGlkPSJiIiB4Mj0iMCIgeTI9IjEwMCUiPgogICAgICAgICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNiYmIiIHN0b3Atb3BhY2l0eT0iLjEiLz4KICAgICAgICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLW9wYWNpdHk9Ii4xIi8+CiAgICAgICAgPC9saW5lYXJHcmFkaWVudD4KICAgICAgICA8bWFzayBpZD0iYSIgd2lkdGg9IjE4NiIgaGVpZ2h0PSIyMCI+CiAgICAgICAgICAgIDxyZWN0IHdpZHRoPSIxODYiIGhlaWdodD0iMjAiIHJ4PSIzIgogICAgICAgICAgICBmaWxsPSIjZmZmIi8+CiAgICAgICAgPC9tYXNrPgogICAgICAgIDxnIG1hc2s9InVybCgjYSkiPgogICAgICAgICAgICA8cGF0aCBmaWxsPSIjNTU1IiBkPSJNMCAwaDMxdjIwSDB6IiAvPgogICAgICAgICAgICA8cGF0aCBmaWxsPSIjMDA3ZWM2IgogICAgICAgICAgICBkPSJNMzEgMGgxNTV2MjBIMzF6IgogICAgICAgICAgICAvPgogICAgICAgICAgICA8cGF0aCBmaWxsPSJ1cmwoI2IpIiBkPSJNMCAwaDE4NnYyMEgweiIgLz4KICAgICAgICA8L2c+CiAgICAgICAgPGcgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9IkRlamFWdSBTYW5zLAogICAgICAgIFZlcmRhbmEsR2VuZXZhLHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTEiPgogICAgICAgICAgICA8dGV4dCB4PSIxNiIgeT0iMTUiIGZpbGw9IiMwMTAxMDEiCiAgICAgICAgICAgIGZpbGwtb3BhY2l0eT0iLjMiPgogICAgICAgICAgICAgICAgRE9JCiAgICAgICAgICAgIDwvdGV4dD4KICAgICAgICAgICAgPHRleHQgeD0iMTYiIHk9IjE0Ij4KICAgICAgICAgICAgICAgIERPSQogICAgICAgICAgICA8L3RleHQ+CiAgICAgICAgICAgIDx0ZXh0IHg9IjEwOCIKICAgICAgICAgICAgeT0iMTUiIGZpbGw9IiMwMTAxMDEiIGZpbGwtb3BhY2l0eT0iLjMiPgogICAgICAgICAgICAgICAgMTAuNTI4MS96ZW5vZG8uMzgyMzA0OQogICAgICAgICAgICA8L3RleHQ+CiAgICAgICAgICAgIDx0ZXh0IHg9IjEwOCIgeT0iMTQiPgogICAgICAgICAgICAgICAgMTAuNTI4MS96ZW5vZG8uMzgyMzA0OQogICAgICAgICAgICA8L3RleHQ+CiAgICAgICAgPC9nPgogICAgPC9zdmc+" alt="DOI" /></a></p>
 <p>This repository includes code, data, and some intermediate results to reproduce the results in Thompson et al. (“A complex phenotype in salmon controlled by a simple change in migratory timing”). You can get the whole thing by cloning or downloading the repo from <a href="https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing">https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing</a>.</p>
+<p>If you are viewing this as the README of a GitHub repository, note that you can read it in a somewhat friendlier format (i.e., with a table of contents, etc.) on GitHub pages at: <a href="https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/">https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/</a></p>
 <p>For the whole-genome resequencing data, the production of BAMs and VCFs from the original FASTQ files follows a standard bwa/GATK pipeline as described in the supplemental methods. Here we focus on analyses of the products of that work. The various steps are described in a series of RMarkdown documents with a fair bit of explanation/description of the procedures. Analyses requiring the use of cluster computing resources are described and documented, but will not be run automatically by evaluating the RMarkdown document. Implementing them yourself will require modification for the vagaries of your own high performance computing system and preferred mode of parallelization, etc. Running some of the RMarkdown documents requires a proper shell. These were run on a Mac.</p>
 <p>Rmarkdown documents in the 000 series were developed primarily by Eric C. Anderson. Rmarkdown documents in the 100 series were developed primarily by Neil F. Thompson. Rmarkdown documents in the 200 series were developed primarily by Eric C. Anderson and deal with further analyses done to respond to several reviewer queries.</p>
 <p>In most cases, products from cluster computing are placed in this repository within the <code>stored_results</code> directory. This means that all the RMarkdown documents can be evaluated successfully without first running the cluster-based analyses, except for <code>002-allele-frequencies.Rmd</code>, for which the products from the cluster-based analyses require too much space to store in this repository. Fortunately, none of the downstream analyses depend upon the outputs from <code>002-allele-frequencies.Rmd</code>.</p>
@@ -1759,7 +1761,6 @@ RentPlus=/Users/eriq/Documents/others_code/RentPlus/RentPlus.jar</code></pre>
 the top level of this repository. When you are done, you should be able to <code>ls</code> the Jar file like this:</li>
 </ol>
 <pre class="sh"><code>ls snpEff_v4_3t_core/snpEff/snpEff.jar </code></pre>
-<pre><code>## snpEff_v4_3t_core/snpEff/snpEff.jar</code></pre>
 </div>
 <div id="r-packages" class="section level2">
 <h2>R Packages</h2>

@@ -1,6 +1,6 @@
 ---
 title: "Thompson et. al. 2020, Data and Code Repository"
-author: "Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza"
+author: "Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza"
 output: 
   github_document:
     toc: true
@@ -11,6 +11,7 @@ output:
     toc_depth: 3
 bibliography: references.bib
 ---
+
 
 **Last Updated:** `r Sys.Date()`
 
@@ -34,13 +35,16 @@ make_link <- function(Rmd, base = hdir) {
 }
 ```
 
+[![DOI](https://zenodo.org/badge/263405637.svg)](https://zenodo.org/badge/latestdoi/263405637)
+
 This repository includes code, data, and some intermediate results to
 reproduce the results in Thompson et al. ("A complex phenotype in salmon
 controlled by a simple change in migratory timing").
 You can get the whole thing by cloning or downloading the repo from 
 [https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing](https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing).
 
-You can view this README in a somewhat friendlier format (i.e., with a table
+If you are viewing this as the README of a GitHub repository, note that
+you can read it in a somewhat friendlier format (i.e., with a table
 of contents, etc.) on GitHub pages at:
 [https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/](https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/)
 
@@ -226,7 +230,7 @@ Version 4.3 with a release data of 24 November 2017.  THis is the version we use
 2. Expand that zip archive and move the resulting directory into  
 the top level of this repository.  When you are done, you should be
 able to `ls` the Jar file like this:
-```{sh}
+```{sh, eval=FALSE}
 ls snpEff_v4_3t_core/snpEff/snpEff.jar 
 ```
 

@@ -1,9 +1,12 @@
 Thompson et. al. 2020, Data and Code Repository
 ================
 Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell,
-Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza
+Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza
 
-**Last Updated:** 2020-05-12
+**Last Updated:**
+2020-05-12
+
+[![DOI](https://zenodo.org/badge/263405637.svg)](https://zenodo.org/badge/latestdoi/263405637)
 
 This repository includes code, data, and some intermediate results to
 reproduce the results in Thompson et al. (“A complex phenotype in salmon
@@ -11,8 +14,9 @@ controlled by a simple change in migratory timing”). You can get the
 whole thing by cloning or downloading the repo from
 <https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing>.
 
-You can view this README in a somewhat friendlier format (i.e., with a
-table of contents, etc.) on GitHub pages at:
+If you are viewing this as the README of a GitHub repository, note that
+you can read it in a somewhat friendlier format (i.e., with a table of
+contents, etc.) on GitHub pages at:
 <https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/>
 
 For the whole-genome resequencing data, the production of BAMs and VCFs
@@ -251,8 +255,6 @@ So,
 ``` sh
 ls snpEff_v4_3t_core/snpEff/snpEff.jar 
 ```
-
-    ## snpEff_v4_3t_core/snpEff/snpEff.jar
 
 ## R Packages
 
