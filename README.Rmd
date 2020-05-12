@@ -40,6 +40,10 @@ controlled by a simple change in migratory timing").
 You can get the whole thing by cloning or downloading the repo from 
 [https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing](https://github.com/eriqande/thompson-et-al-2020-chinook-salmon-migration-timing).
 
+You can view this README in a somewhat friendlier format (i.e., with a table
+of contents, etc.) on GitHub pages at:
+[https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/](https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/)
+
 For the whole-genome resequencing data, the production of BAMs and VCFs from the original FASTQ files follows a
 standard bwa/GATK pipeline as described in the supplemental methods.  Here we focus on analyses
 of the products of that work.  The various steps are described in a series of RMarkdown documents with a 
