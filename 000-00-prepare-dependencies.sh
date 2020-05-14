@@ -20,6 +20,8 @@
 mkdir genome
 cd genome
 
+module load bio/samtools
+
 # coho genome
 wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/021/735/GCF_002021735.1_Okis_V1/GCF_002021735.1_Okis_V1_genomic.fna.gz
 mv GCF_002021735.1_Okis_V1_genomic.fna.gz Okis_V1_genomic.fna.gz
@@ -27,11 +29,20 @@ gunzip Okis_V1_genomic.fna.gz
 samtools faidx Okis_V1_genomic.fna
 
 
+
 # chinook genome
 wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/872/995/GCF_002872995.1_Otsh_v1.0/GCF_002872995.1_Otsh_v1.0_genomic.fna.gz
 mv GCF_002872995.1_Otsh_v1.0_genomic.fna.gz Otsh_V1_genomic.fna.gz
 gunzip Otsh_V1_genomic.fna.gz 
 samtools faidx Otsh_V1_genomic.fna
+
+# It looks like there was some inconsistency in the naming of these files
+# in some scripts. On the cluster it was Otsh_V1_genomic.fna and on the other
+# it was Otsh_v1.0_genomic.fna. Ridiculous. For evaluating code on the laptop the
+# latter is used.  Rather than change the code throughout in this repo, we will
+# just hard link both file names to the same content on disk, like so:
+ln  Otsh_V1_genomic.fna Otsh_v1.0_genomic.fna
+ln  Otsh_V1_genomic.fna.fai Otsh_v1.0_genomic.fna.fai
 
 # chinook genome GFF
 wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/872/995/GCF_002872995.1_Otsh_v1.0/GCF_002872995.1_Otsh_v1.0_genomic.gff.gz
@@ -135,7 +146,15 @@ cp lastz-distrib-1.04.03/bin/lastz ~/bin/
 cp multiz-tba.012109/maf2fasta multiz-tba.012109/single_cov2 ~/bin
 
 
-# The other programs, like bcftools, bwa, samtools, PHASE, etc.
+# get PHASE:
+wget http://stephenslab.uchicago.edu/assets/software/phase/phasecode/phase.2.1.1.linux.tar.gz
+tar -xvf phase.2.1.1.linux.tar.gz
+cp phase.2.1.1.linux/PHASE ~/bin/  # ~/bin is in my PATH
+rm -r phase.2.1.1.linux # clean up
+
+
+
+# The other programs, like bcftools, bwa, samtools, etc.
 # are included on the cluster already as modules.  We just have to
 # remember to load them.
 
