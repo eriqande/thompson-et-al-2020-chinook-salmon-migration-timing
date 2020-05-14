@@ -93,80 +93,80 @@ and things in a tibble, to make it easy to look at, check, and verify.
 #' @param Y number of years to run the simulation backward
 #' @param n the number of gene copies sampled
 discrete_coal_w_recomb <- function(
-  N = 1000,
-  r = 0.006,
-  g = 3,
-  Y = 100,
-  n = 200
-) {
-  
+                                   N = 1000,
+                                   r = 0.006,
+                                   g = 3,
+                                   Y = 100,
+                                   n = 200) {
+
   # set the number of generations:
-  G = ceiling(Y/g)
-  
+  G <- ceiling(Y / g)
+
   # make a tibble to store the nodes in the tree, and initialize it at generation 1
   L <- tibble(
     Gen = 1,
-    Pleaves = as.list(1:n),  # these are list columns giving the leaves that descend from each node
-    Rleaves = as.list(1:n)   # Note that Pleaves should be called "Dleaves".  When I first did this
-                             # I denoted the distal region by P.
+    Pleaves = as.list(1:n), # these are list columns giving the leaves that descend from each node
+    Rleaves = as.list(1:n) # Note that Pleaves should be called "Dleaves".  When I first did this
+    # I denoted the distal region by P.
   )
-  
+
   # now, we for each cycle/generation we do two steps:
   # 1. we sample "parents" (in the graph sense) for the D region and the P region
   # 2. from those parents we create the nodes of the next generation.
   # We makes some functions for those here
-  
+
   # sample the parents of the current generation, and return the input
   # tibble with the parents attached
   sample_parents <- function(L) {
     L %>%
       mutate(DoRecombine = runif(n()) < r) %>%
-      mutate(Pparent_tmp = sample(1:N, n(), replace = TRUE),
-             Rparent_tmp = ifelse(!DoRecombine, Pparent_tmp, sample(1:N, n(), replace = TRUE))) %>%
+      mutate(
+        Pparent_tmp = sample(1:N, n(), replace = TRUE),
+        Rparent_tmp = ifelse(!DoRecombine, Pparent_tmp, sample(1:N, n(), replace = TRUE))
+      ) %>%
       mutate(
         Pparent = as.integer(factor(Pparent_tmp, levels = sort(unique(c(Pparent_tmp, Rparent_tmp))))),
         Rparent = as.integer(factor(Rparent_tmp, levels = sort(unique(c(Pparent_tmp, Rparent_tmp)))))
-        ) %>%
+      ) %>%
       select(-Pparent_tmp, -Rparent_tmp)
   }
-  
+
   # create the nodes of the next generation from the parent assignments of
   # the current.  This takes a tibble of the generation with the parents
   # assigned and it returns a new tibble starting off the next generation.
   form_nodes <- function(LP) {
-    
+
     # first, make a new tibble with a column for segments
     RET <- tibble(
       Gen = LP$Gen[1] + 1,
       Segments = sort(unique(c(LP$Pparent, LP$Rparent)))
     )
-    
-    PL <- LP %>% 
+
+    PL <- LP %>%
       group_by(Pparent) %>%
       summarise(Pleaves = list(unique(unlist(Pleaves))))
-    
-    RL <- LP %>% 
+
+    RL <- LP %>%
       group_by(Rparent) %>%
       summarise(Rleaves = list(unique(unlist(Rleaves))))
-    
-    
-    RET %>% 
+
+
+    RET %>%
       left_join(., PL, by = c("Segments" = "Pparent")) %>%
       left_join(., RL, by = c("Segments" = "Rparent")) %>%
       filter(!(map_lgl(Rleaves, is.null) & map_lgl(Pleaves, is.null)))
-    
   }
-  
+
   # with the initialization and the function defs out of the way, we can
   # now cycle over the generations
   Full_tibs_list <- list()
   Full_tibs_list[[1]] <- sample_parents(L)
-  
-  for(gen in 2:G) {
+
+  for (gen in 2:G) {
     NN <- form_nodes(Full_tibs_list[[gen - 1]])
     Full_tibs_list[[gen]] <- sample_parents(NN)
   }
-  
+
   # just return the last generation (could do more, but no real need to at the moment)
   Full_tibs_list[[G]]
 }
@@ -185,34 +185,34 @@ $S$ indicates "Spring" which is synonymous with $E$ or "Early," here.
 #' operates on the output of discrete_coal_w_recomb
 #' @param gamma the fraction of R-regions with no descendants that have S P-regions.
 count_haplotypes <- function(D, gamma = 0.5) {
-  
+
   # first get a tibble of regions of ancestral segments with RoSA-regions from fall-run
-  Ftmp <- D %>% 
-    filter(!map_lgl(Rleaves, is.null)) 
-  
+  Ftmp <- D %>%
+    filter(!map_lgl(Rleaves, is.null))
+
   # prince region
   FP <- tibble(
-      P_region = unlist(Ftmp$Pleaves),
-      P_Allele = "F"
-    )
+    P_region = unlist(Ftmp$Pleaves),
+    P_Allele = "F"
+  )
   # RoSA region
-  FR <-  tibble(
-      R_region = unlist(Ftmp$Rleaves),
-      R_Allele = "F"
-    )
-      
+  FR <- tibble(
+    R_region = unlist(Ftmp$Rleaves),
+    R_Allele = "F"
+  )
+
   # and then a tibble of the ancestral segments with NULL R-regions (but non-null P regions, obviously)
   # Prince regions that could be from spring
-  
+
   # note that if there are no NULL rows in Rleaves, then there will be no spring haplotypes dropping down so that is
   # just a big zero.
-  if(sum(map_lgl(D$Rleaves, is.null)) == 0) {
+  if (sum(map_lgl(D$Rleaves, is.null)) == 0) {
     return(tibble(
-      P_Allele = c("F", "S"), 
+      P_Allele = c("F", "S"),
       R_Allele = c("F", "F"),
       n = c(length(unlist(D$Pleaves)), 0),
       freq = c(1.0, 0)
-                  ))
+    ))
   }
   SP <- D %>%
     filter(map_lgl(Rleaves, is.null)) %>%
@@ -221,21 +221,20 @@ count_haplotypes <- function(D, gamma = 0.5) {
     dplyr::do(tibble(
       P_region = unlist(.$Pleaves),
       P_Allele = .$hap
-      )) %>%
+    )) %>%
     ungroup() %>%
     select(-Segments)
-  
- 
+
+
   # now, we put those regions together into the sampled segments in the end...
   tmp <- bind_rows(FP, SP)
-  
+
 
   left_join(tmp, FR, by = c("P_region" = "R_region")) %>%
-    rename(haplotype = P_region) %>% 
+    rename(haplotype = P_region) %>%
     arrange(haplotype) %>%
     count(P_Allele, R_Allele) %>%
     mutate(freq = n / sum(n))
-
 }
 ```
 
@@ -252,8 +251,8 @@ first started really impacting things with mining (probably about 1838, so 180 y
 ```{r recomb-par-table, include=TRUE}
 param_table <- tribble(
   ~Parameter, ~Description, ~"Value(s) Used",
-  "$N_e$",   "Size of the Wright-Fisher population",  "9,092",
-  "$g$",  "Average generation length", "3",
+  "$N_e$", "Size of the Wright-Fisher population", "9,092",
+  "$g$", "Average generation length", "3",
   "$Y$", "Number of years of simulation", "180",
   "$G$", "Number of generations simulated, equal to $\\lceil Y/g \\rceil$", "60",
   "$n$", "Number of sampled segments = twice the number of sampled diploids", "898",
@@ -264,8 +263,9 @@ param_table <- tribble(
 pander::pander(
   as.data.frame(param_table),
   booktabs = TRUE,
-#  caption = '(\\#tab:recomb-par-table) Parameters in the coalescent simulation model.',
-  justify = "left")
+  #  caption = '(\\#tab:recomb-par-table) Parameters in the coalescent simulation model.',
+  justify = "left"
+)
 ```
 
 And to match sample size we saw that we have $n = 898$,
@@ -285,7 +285,7 @@ result_normal_rho <- Normal_rho100 %>%
   group_by(Rep) %>%
   do(count_haplotypes(.))
 
-# and plot a histogram of the S,F haplotype freqs 
+# and plot a histogram of the S,F haplotype freqs
 normal_rho_plot <- result_normal_rho %>%
   filter(P_Allele == "F" & R_Allele == "F") %>%
   mutate(SF_hap_freq = 1 - freq) %>%
@@ -310,7 +310,7 @@ result_rho_10X <- rho_10X_500 %>%
   group_by(Rep) %>%
   do(count_haplotypes(.))
 
-# and plot a histogram of the S,F haplotype freqs 
+# and plot a histogram of the S,F haplotype freqs
 rho_10X_plot <- result_rho_10X %>%
   filter(P_Allele == "F" & R_Allele == "F") %>%
   mutate(SF_hap_freq = 1 - freq) %>%
@@ -324,29 +324,31 @@ rho_10X_plot
 
 ## save things that we might want to come back to
 ```{r}
-save(result_normal_rho, 
-     result_rho_10X, 
-     normal_rho_plot,
-     rho_10X_plot,
-     file = "outputs/012/results-and-plots.rda",
-     compress = "xz"
-     )
+save(result_normal_rho,
+  result_rho_10X,
+  normal_rho_plot,
+  rho_10X_plot,
+  file = "outputs/012/results-and-plots.rda",
+  compress = "xz"
+)
 ```
 
 ## Make some final figures:
  
 ```{r}
-two_rhos <- list(`1 cM/Mb` = result_normal_rho,
-                 `10 cM/Mb` = result_rho_10X) %>%
+two_rhos <- list(
+  `1 cM/Mb` = result_normal_rho,
+  `10 cM/Mb` = result_rho_10X
+) %>%
   bind_rows(.id = "recomb_rate")
-  
+
 final_plot <- two_rhos %>%
   filter(P_Allele == "F" & R_Allele == "F") %>%
   mutate(SF_hap_freq = 1 - freq) %>%
   ggplot(., aes(x = SF_hap_freq)) +
   geom_histogram(bins = 100) +
-  scale_x_continuous(limits = c(NA, 0.25)) + 
-  facet_wrap(~ recomb_rate, nrow = 1) +
+  scale_x_continuous(limits = c(NA, 0.25)) +
+  facet_wrap(~recomb_rate, nrow = 1) +
   theme_bw() +
   geom_vline(xintercept = 0.22, color = "red") +
   xlab("Frequency of E/L haplotype in simulated sample") +

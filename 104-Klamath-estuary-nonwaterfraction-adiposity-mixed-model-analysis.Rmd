@@ -26,9 +26,9 @@ rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
 
 estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
 
-rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+rosa_meta <- left_join(estuary_meta, rosa_data, by = c("NMFS ID" = "NMFS_DNA_ID")) %>%
   dplyr::select(-ID) %>%
-  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  rename(NMFS_DNA_ID = "NMFS ID") %>%
   dplyr::select(NMFS_DNA_ID, rosa, everything())
 ```
 
@@ -36,40 +36,50 @@ Remove all samples with ANY missing data. And remove the recombinant genotypes.
 
 ```{r}
 rosa_stats <- rosa_meta %>%
-  filter(!str_detect(rosa,"\\?"),
-         rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL"))
+  filter(
+    !str_detect(rosa, "\\?"),
+    rosa %in% c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL")
+  )
 ```
 
 plot fatness as function of return date
 ```{r}
 rosa_stats %>%
-mutate(rosa_f  = factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL")))%>%
-ggplot(.,aes(x = julian,y = drywet,fill = rosa_f,colour=rosa_f)) + 
+  mutate(rosa_f = factor(rosa, levels = c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL"))) %>%
+  ggplot(., aes(x = julian, y = drywet, fill = rosa_f, colour = rosa_f)) +
   geom_point() +
   xlab(label = "Estuary sampling date") +
   ylab(label = "non-water fraction") +
-  scale_fill_discrete(name = "Genotype") + 
+  scale_fill_discrete(name = "Genotype") +
   scale_colour_discrete(name = "Genotype") +
   theme_bw() +
-  scale_x_continuous(breaks=c(121,152,182,213,244,274,305),labels=c("May-01","June-01",
-                                                            "July-01","Aug-01","Sept-01","Oct-01","Nov-01"))+
-    theme(axis.text = element_text(size = 12),
-        axis.title = element_text(size = 14),axis.text.x = element_text(angle = 45, hjust = 1))+
-          guides(fill=FALSE,
-                 colour=FALSE)+
-       facet_grid(year~sex)
+  scale_x_continuous(breaks = c(121, 152, 182, 213, 244, 274, 305), labels = c(
+    "May-01", "June-01",
+    "July-01", "Aug-01", "Sept-01", "Oct-01", "Nov-01"
+  )) +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14), axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  guides(
+    fill = FALSE,
+    colour = FALSE
+  ) +
+  facet_grid(year ~ sex)
 ```
 
 ## Start mixed effects model analysis to determine if adding RoSA as a random effect predicts Gonadosomatic Index better than just a model with estuary sampling date.
 
 ```{r}
-stat_data <- rosa_stats %>% 
-  mutate(sex_f = factor(sex,levels=c("f","m")),
-         year_f = factor(year,levels=c("2009","2010")),
-         rosa_f = factor(rosa, levels = c("EEEEEEEE","HHHHHHHH","LLLLLLLL")),
-         log_est = log(julian),
-         log_est2= log(julian)^2) %>%
-  rename(fatness=drywet)
+stat_data <- rosa_stats %>%
+  mutate(
+    sex_f = factor(sex, levels = c("f", "m")),
+    year_f = factor(year, levels = c("2009", "2010")),
+    rosa_f = factor(rosa, levels = c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL")),
+    log_est = log(julian),
+    log_est2 = log(julian)^2
+  ) %>%
+  rename(fatness = drywet)
 ```
 
 #mixed effects model analysis to determine if adding RoSA as a random effect predicts Gonadosomatic Index better than just a model with estuary sampling date.
@@ -77,33 +87,33 @@ stat_data <- rosa_stats %>%
 ```{r gls-model}
 library(nlme)
 
-M0 <- gls(fatness ~ 1 + log_est + sex +  year_f ,method="REML", data = stat_data)
+M0 <- gls(fatness ~ 1 + log_est + sex + year_f, method = "REML", data = stat_data)
 ```
 
 #exploratory plotting to look at model assumptions.
 
 ```{r}
-e1 <- resid(M0,type="normalized")
-plot(e1~log_est,stat_data)
+e1 <- resid(M0, type = "normalized")
+plot(e1 ~ log_est, stat_data)
 ```
 
 ```{r}
-plot(e1~sex_f,stat_data)
+plot(e1 ~ sex_f, stat_data)
 ```
 
 ```{r}
-plot(e1~year_f,stat_data)
+plot(e1 ~ year_f, stat_data)
 ```
 
 ```{r, histo-of-resids}
-hist(e1,main="Histogram of residuals") # looks ok
+hist(e1, main = "Histogram of residuals") # looks ok
 ```
 
 None of that is concerning or indicative of violations of any assumptions.
 
 #specify random effects model and begin model selection
 ```{r random-intercept-model}
-mm1 <- lme(fatness ~ 1 + log_est + sex +  year_f , random = ~1 | rosa_f, method = "REML", data = stat_data) #random intercept model
+mm1 <- lme(fatness ~ 1 + log_est + sex + year_f, random = ~ 1 | rosa_f, method = "REML", data = stat_data) # random intercept model
 ```
 
 likelihood ratio test on random intercept vs GLS model
@@ -116,7 +126,7 @@ Adding a random intercept for RoSA does not improve the model. When forcing the 
 Lets see what happen when a random intercept and slope for RoSA are included. A random slope would indicate that the strength of the relationship between fatness and estuary entry date is not the same among RoSA genotypes.
 
 ```{r random-slope-VS-GLS}
-mm2 <- lme(fatness ~ 1 + log_est + year_f + sex, random = ~ 0 + log_est|rosa_f, method = "REML", data = stat_data)
+mm2 <- lme(fatness ~ 1 + log_est + year_f + sex, random = ~ 0 + log_est | rosa_f, method = "REML", data = stat_data)
 ```
 
 LRT on random slope vs GLS
@@ -130,18 +140,18 @@ A random slope model is not preferred over the non-random model.
 Let's see if the random slope and intercept for RoSA is the most preferred model
 
 ```{r random-slope-and-intercept-vs-GLS, error=TRUE}
-lme(fatness ~ 1 + log_est + sex +  year_f , random = ~ 1 + log_est|rosa_f, method = "REML", data = stat_data)
+lme(fatness ~ 1 + log_est + sex + year_f, random = ~ 1 + log_est | rosa_f, method = "REML", data = stat_data)
 ```
 
 That error is due to singularity and not a convergence limit. I increased the number of iterations to 1000 (50 is the default) and it returns the same error. The singularity is because the model is overfit OR because th variance is too damn small for the model to converge. If the model is overfit then that tells us the random slope and intercept model wouldn't be preferred over the GLS model. Let's multiply fatness by 10 to increase the magnitude of the variance and see if that gets us a model than converges.
 
 ```{r random-slope-and-intercept-mod-variance-VS-GLS}
 stat_data <- stat_data %>%
-  mutate(fat_new = fatness*10)
+  mutate(fat_new = fatness * 10)
 
-mm3_new<- lme(fat_new ~ 1 + log_est + sex +  year_f, random = ~ 1 + log_est|rosa_f, method = "REML", data = stat_data)
+mm3_new <- lme(fat_new ~ 1 + log_est + sex + year_f, random = ~ 1 + log_est | rosa_f, method = "REML", data = stat_data)
 
-m0_new <- gls(fat_new ~ 1 + log_est + sex +  year_f, method="REML",data = stat_data)
+m0_new <- gls(fat_new ~ 1 + log_est + sex + year_f, method = "REML", data = stat_data)
 ```
 
 Model selection using liklihood ratio test using the original fatness values multiplied by 10 to increase variance value and get the variance estimate to not be zero.
@@ -153,9 +163,9 @@ anova(m0_new, mm3_new)
 
 Let's redo the random intercept model and the random slope model really quickly with the fat_new response
 ```{r, mixed-models-with-new-variance}
-mm1_new <- lme(fat_new ~ 1 + log_est +  year_f + sex, random = ~1 | rosa_f, method = "REML", data = stat_data)
+mm1_new <- lme(fat_new ~ 1 + log_est + year_f + sex, random = ~ 1 | rosa_f, method = "REML", data = stat_data)
 
-mm2_new <- lme(fat_new ~ 1 + log_est + year_f + sex, random = ~ 0 + log_est|rosa_f, method = "REML", data = stat_data)
+mm2_new <- lme(fat_new ~ 1 + log_est + year_f + sex, random = ~ 0 + log_est | rosa_f, method = "REML", data = stat_data)
 ```
 
 LRT random intercept vs GLS
@@ -176,25 +186,25 @@ Nothing changed when using the fatness multipled by 10 in model selection.  Neit
 #Model selection on the fixed effects in the GLS model and see what predictors significantly influence fatness.
 
 ```{r, GLS-model-selection}
-M0 <- gls(fatness ~ 1 + log_est + sex +  year_f ,method="ML", data = stat_data)
-M1 <- gls(fatness ~ 1 + log_est + sex ,method="ML", data = stat_data)
-M2 <- gls(fatness ~ 1 + log_est + year_f ,method="ML", data = stat_data)
-M3 <- gls(fatness ~ 1 + sex +  year_f ,method="ML", data = stat_data)
+M0 <- gls(fatness ~ 1 + log_est + sex + year_f, method = "ML", data = stat_data)
+M1 <- gls(fatness ~ 1 + log_est + sex, method = "ML", data = stat_data)
+M2 <- gls(fatness ~ 1 + log_est + year_f, method = "ML", data = stat_data)
+M3 <- gls(fatness ~ 1 + sex + year_f, method = "ML", data = stat_data)
 ```
 
 LRT on year
 ```{r GLS-LRT-year}
-anova(M1,M0)
+anova(M1, M0)
 ```
 
 LRT on sex
 ```{r GLS-LRT-sex}
-anova(M2,M0)
+anova(M2, M0)
 ```
 
 LRT on log_est
 ```{r GLS-LRT-log_estuaryDate}
-anova(M3,M0)
+anova(M3, M0)
 ```
 
 F-test on full GLS

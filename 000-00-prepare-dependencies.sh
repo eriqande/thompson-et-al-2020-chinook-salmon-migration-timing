@@ -1,14 +1,32 @@
 
 # This is the script used to download and install dependencies to
-# the SEDNA cluster.  Many bioinformatic utilities are available as
-# modules, so we don't worry about them here.  Rather, here, we are
-# dealing with genomes, geo-spatial data, R packages, Java programs,
+# the SEDNA cluster.  We use Miniconda to install many of the programs. 
+# Then we deal with genomes, geo-spatial data, R packages, Java programs,
 # and a few things that need to be compiled.
 
-# calls to module, here, may not be standard on your HPC or system.
-# So, don't expect this script to work "out of the box."  On the other
-# hand, everything that it is doing in documented in this repo's README,
-# so, if need be, you can just install all this stuff by hand.
+# You might have to do somethign different on your system.
+# See the repo's README for information about dependencies.
+# If need be, you can just install all the stuff by hand.
+
+## Make a ~/bin and put it in your path --------------------------------------
+mkdir -p ~/bin
+echo $PATH:~/bin >> .bashrc
+
+## Install binaries that we can from Miniconda --------------------------------
+
+# Environment solving seems a little wonky.  This got what I needed
+conda create -n thompy -c bioconda bcftools samtools angsd bwa vcftools bedtools
+conda activate thompy
+conda install samtools=1.9
+
+## Get the PHASE binary and put it in ~/bin
+
+# get PHASE:
+wget http://stephenslab.uchicago.edu/assets/software/phase/phasecode/phase.2.1.1.linux.tar.gz
+tar -xvf phase.2.1.1.linux.tar.gz
+cp phase.2.1.1.linux/PHASE ~/bin/  # ~/bin is in my PATH
+rm -r phase.2.1.1.linux # clean up
+
 
 
 ## Genomes, etc. --------------------------------------------------------------
@@ -20,14 +38,11 @@
 mkdir genome
 cd genome
 
-module load bio/samtools
-
 # coho genome
 wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/002/021/735/GCF_002021735.1_Okis_V1/GCF_002021735.1_Okis_V1_genomic.fna.gz
 mv GCF_002021735.1_Okis_V1_genomic.fna.gz Okis_V1_genomic.fna.gz
 gunzip Okis_V1_genomic.fna.gz 
 samtools faidx Okis_V1_genomic.fna
-
 
 
 # chinook genome
@@ -146,16 +161,23 @@ cp lastz-distrib-1.04.03/bin/lastz ~/bin/
 cp multiz-tba.012109/maf2fasta multiz-tba.012109/single_cov2 ~/bin
 
 
-# get PHASE:
-wget http://stephenslab.uchicago.edu/assets/software/phase/phasecode/phase.2.1.1.linux.tar.gz
-tar -xvf phase.2.1.1.linux.tar.gz
-cp phase.2.1.1.linux/PHASE ~/bin/  # ~/bin is in my PATH
-rm -r phase.2.1.1.linux # clean up
 
+## Notes on running this on the SEDNA cluster ---------------------------------
 
+# Before doing `source("render-numbered-Rmds.R")` within R on the
+# SEDNA cluster we have to prepare it:
 
-# The other programs, like bcftools, bwa, samtools, etc.
-# are included on the cluster already as modules.  We just have to
-# remember to load them.
+# get a good handful of cores.  This will make the BEAGLE stuff
+# faster and will also provide snpEff sufficient memory:
+
+# Then activate the thompy conda environment
+# Then load the R module (specific to SEDNA)
+# Then launch R:
+
+srun -c 8 --pty /bin/bash
+
+conda activate thompy
+module load R 
+R
 
 

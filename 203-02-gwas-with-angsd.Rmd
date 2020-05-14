@@ -139,12 +139,14 @@ tmp <- lrt %>%
 # now, we want to be able to see how many points there are with no covariate
 # correction (because some end up becoming non-computable by ANGSD when
 # the covariates are added).
-lrt_against_0 <- tmp %>% filter(num_pc_covariates == 3) %>% mutate(num_pc_covariates = "0", lrt = lrt_no_pc_covariates) %>%
+lrt_against_0 <- tmp %>%
+  filter(num_pc_covariates == 3) %>%
+  mutate(num_pc_covariates = "0", lrt = lrt_no_pc_covariates) %>%
   bind_rows(tmp) %>%
   mutate(num_pc_covariates = factor(as.integer(num_pc_covariates)))
 
 ggplot(lrt_against_0, aes(x = lrt_no_pc_covariates, y = lrt, colour = num_pc_covariates)) +
-  geom_point(shape = 21) + 
+  geom_point(shape = 21) +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed")
 ```
 
@@ -164,15 +166,14 @@ lrt_two_class <- lrt_against_0 %>%
   mutate(status = case_when(
     CHROM == "NC_037124.1" & POS > 11.26e6 & POS < 13.29e6 ~ "1 Mb from RoSA",
     TRUE ~ "Not near RoSA"
-  )) %>% 
+  )) %>%
   arrange(desc(status), desc(lrt))
 
 ggplot(lrt_two_class, aes(x = lrt_no_pc_covariates, y = lrt, colour = status)) +
-  geom_point() + 
+  geom_point() +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
   scale_colour_manual(values = c(`Not near RoSA` = "gray", `1 Mb from RoSA` = "black")) +
   theme_bw()
-
 ```
 
 OK, we have that most of the high values are near the RoSA.  
@@ -200,7 +201,6 @@ lrt_pvalues <- lrt_against_0 %>%
 # when adding covariates
 lrt_p_values_no_fliers <- lrt_pvalues %>%
   filter(lrt < 1.1 * lrt_no_pc_covariates)
-
 ```
 
 Now, prep for MH plots:
@@ -213,17 +213,17 @@ Now, simply make a series of plots. Here is a function to facilitate that:
 ```{r}
 asso_mh_plots <- function(D) {
   MM <- my_mh_prep(D, chrom_lengths)
-  
+
   # correct the position of the NWs label.
   idx <- which(MM$axisdf$cluster == "NWs")
   MM$axisdf$clust_start[idx] <- MM$axisdf$clust_start[idx - 1] + MM$axisdf$clust_length[idx - 1] + 1
   MM$axisdf$clust_center[idx] <- (2 * MM$axisdf$clust_start[idx] + MM$axisdf$clust_length[idx]) / 2
-  
+
   MP <- plot_mh(MM$snps, MM$axisdf) +
     xlab("Position Along Chromosome") +
     ylab("Negative Log-10 P-value") +
     ylim(0.8, NA)
-  
+
   MP
 }
 ```
@@ -239,7 +239,7 @@ asso_mh_plots(D = lrt_p_values_no_fliers %>% filter(num_pc_covariates == 0))
 
 And here we look at the top 40 SNPs:
 ```{r}
-lrt_pvalues %>% 
+lrt_pvalues %>%
   filter(num_pc_covariates == 0) %>%
   arrange(desc(abs_diff)) %>%
   slice(1:40) %>%
@@ -271,7 +271,7 @@ asso_mh_plots(D = lrt_pvalues %>% filter(num_pc_covariates == 3))
 
 While we are at it, we should see which 10 of those SNPs are most highly associated.
 ```{r}
-lrt_pvalues %>% 
+lrt_pvalues %>%
   filter(num_pc_covariates == 3) %>%
   arrange(desc(abs_diff)) %>%
   slice(1:10) %>%
@@ -327,7 +327,7 @@ That gives us all those data, together.  Note that abs_diff is NA for many of th
 we filtered the absolute allele freq diffs to those > 0.25.  Let's have a look at 100 SNPs
 with the highest absolute frequency differences:
 ```{r}
-all_raw %>% 
+all_raw %>%
   arrange(desc(abs_diff)) %>%
   slice(1:100)
 ```
@@ -341,9 +341,9 @@ haplotypes).
 
 So, let's filter the above to keep only the ones that ANGSD actually estimated an LRT:
 ```{r}
-all_raw %>% 
+all_raw %>%
   arrange(desc(abs_diff)) %>%
-  filter(LRT != -999) %>% 
+  filter(LRT != -999) %>%
   slice(1:500)
 ```
 

@@ -163,8 +163,9 @@ meta <- read_csv("data/wgs-chinook-samples.csv") %>%
       "Spring" =  "Spring Run",
       "Late Fall" =  "Late Fall Run",
       "Winter" =  "Winter Run",
-    )) %>%
-  mutate(  # make a factor to be able to order the populations a little better
+    )
+  ) %>%
+  mutate( # make a factor to be able to order the populations a little better
     Population_f = factor(
       Population,
       levels = c(
@@ -175,16 +176,18 @@ meta <- read_csv("data/wgs-chinook-samples.csv") %>%
         "Feather R.H.",
         "Salmon R.",
         "Trinity R.H"
-      )))
+      )
+    )
+  )
 
 # and make sure that our colors or here
 pca_colors <- c(
-  `Salmon R.` =  "#bae4b3",
-  `Feather R.H.` =  "#fee5d9",
-  `Trinity R.H` =  "#238b45",
-  `San Joaquin R.` =  "#fb6a4a",
-  `Coleman H.` =  "#fcbba1",
-  `Sacramento R. Winter Run` =  "#a50f15",
+  `Salmon R.` = "#bae4b3",
+  `Feather R.H.` = "#fee5d9",
+  `Trinity R.H` = "#238b45",
+  `San Joaquin R.` = "#fb6a4a",
+  `Coleman H.` = "#fcbba1",
+  `Sacramento R. Winter Run` = "#a50f15",
   `Butte Ck.` = "#fc9272"
 )
 # and set our shape values
@@ -197,7 +200,7 @@ pca_shapes <- c(
 
 # function
 prep_output <- function(A) {
-  
+
   # first for each individual i, get the number of sites at which
   # that individual had a read and also another individual, j, averaged
   # over all j.  This tells us on average how many markers went into
@@ -208,62 +211,66 @@ prep_output <- function(A) {
     vcf_name = A$sample_names,
     ave_sites = rowMeans(m) * ncol(m) / (ncol(m) - 1)
   )
-    
+
   # do the whole eigendecomposition on the standard covariance matrix.
   eig <- eigen(A$Cov)
   colnames(eig$vectors) <- sprintf("PC-%02d", 1:ncol(eig$vectors))
-    
-  
-  pca_tib <- as_tibble(eig$vectors[,1:6]) %>%
+
+
+  pca_tib <- as_tibble(eig$vectors[, 1:6]) %>%
     mutate(vcf_name = A$sample_names) %>%
-    select(vcf_name, everything()) 
-  
+    select(vcf_name, everything())
+
   pca_long <- pca_tib %>%
     tidyr::gather(., key = "PC", "val", -vcf_name)
 
   # then expand a grid of the possible comparisons (ordered)
-  pca_pairs <- expand.grid(vcf_name = pca_tib$vcf_name,
-                      PCx = sprintf("PC-%02d", 1:6),
-                      PCy = sprintf("PC-%02d", 1:6),
-                      stringsAsFactors = FALSE) %>%
+  pca_pairs <- expand.grid(
+    vcf_name = pca_tib$vcf_name,
+    PCx = sprintf("PC-%02d", 1:6),
+    PCy = sprintf("PC-%02d", 1:6),
+    stringsAsFactors = FALSE
+  ) %>%
     tibble::as_tibble() %>%
     dplyr::left_join(., pca_long, by = c("vcf_name", "PCx" = "PC")) %>%
     dplyr::rename(val_x = val) %>%
     dplyr::left_join(pca_long, by = c("vcf_name", "PCy" = "PC")) %>%
-    dplyr::rename(val_y = val)  %>% 
+    dplyr::rename(val_y = val) %>%
     left_join(ave_sites, by = "vcf_name") %>% # and here, join on some meta data
     left_join(meta, by = "vcf_name")
-  
-  
+
+
   # and now we are going to the the same sort of thing, but on the covariance
   # matrix computed by the corrlations estimated a la Weir and Goudet
   WaG <- (A$IBS - A$Mt_S) / (1 - A$Mt_S)
   eig <- eigen(WaG)
   colnames(eig$vectors) <- sprintf("PC-%02d", 1:ncol(eig$vectors))
-    
-  
-  pca_tib <- as_tibble(eig$vectors[,1:6]) %>%
+
+
+  pca_tib <- as_tibble(eig$vectors[, 1:6]) %>%
     mutate(vcf_name = A$sample_names) %>%
-    select(vcf_name, everything()) 
-  
+    select(vcf_name, everything())
+
   pca_long <- pca_tib %>%
     tidyr::gather(., key = "PC", "val", -vcf_name)
-  
-  pcp <- expand.grid(vcf_name = pca_tib$vcf_name,
-                      PCx = sprintf("PC-%02d", 1:6),
-                      PCy = sprintf("PC-%02d", 1:6),
-                      stringsAsFactors = FALSE) %>%
+
+  pcp <- expand.grid(
+    vcf_name = pca_tib$vcf_name,
+    PCx = sprintf("PC-%02d", 1:6),
+    PCy = sprintf("PC-%02d", 1:6),
+    stringsAsFactors = FALSE
+  ) %>%
     tibble::as_tibble() %>%
     dplyr::left_join(., pca_long, by = c("vcf_name", "PCx" = "PC")) %>%
     dplyr::rename(WaG_x = val) %>%
     dplyr::left_join(pca_long, by = c("vcf_name", "PCy" = "PC")) %>%
     dplyr::rename(WaG_y = val)
-  
+
   # then join those both and return them
   left_join(pcp, pca_pairs,
-            by = c("vcf_name", "PCx", "PCy"))
+    by = c("vcf_name", "PCx", "PCy")
+  )
 }
-
 ```
 
 Then use that to make a figure:
@@ -271,16 +278,17 @@ Then use that to make a figure:
 covar_114 <- read_rds("stored_results/203/covar-matrix-etc-114-spring-fall-fish.rds")
 allf <- prep_output(covar_114)
 
-bp <- ggplot(allf, aes(x = val_x, y = val_y, fill = Population_f, shape = Ecotype)) + 
+bp <- ggplot(allf, aes(x = val_x, y = val_y, fill = Population_f, shape = Ecotype)) +
   facet_grid(PCy ~ PCx) +
   geom_point(size = 3, stroke = 0.15) +
   scale_fill_manual(values = pca_colors) +
   scale_shape_manual(values = pca_shapes) +
   theme_bw() +
-  guides(fill = guide_legend(override.aes = list(shape = 22, stroke = 0.1, size = 6)),
-         shape = guide_legend(override.aes = list(stroke = 0.35, size = 4))
-         )
-  
+  guides(
+    fill = guide_legend(override.aes = list(shape = 22, stroke = 0.1, size = 6)),
+    shape = guide_legend(override.aes = list(stroke = 0.35, size = 4))
+  )
+
 dir.create("outputs/203", recursive = TRUE, showWarnings = FALSE)
 ggsave(bp, filename = "outputs/203/spring-fall-pca.pdf", width = 20, height = 20)
 

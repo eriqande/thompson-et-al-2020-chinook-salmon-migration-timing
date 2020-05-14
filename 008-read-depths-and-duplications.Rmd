@@ -27,7 +27,6 @@ library(plotly)
 
 
 dir.create("outputs/008", recursive = TRUE, showWarnings = FALSE)
-
 ```
 
 # Per-base-pair depth in the 5.16 Mb region (On the cluster, mostly)
@@ -82,16 +81,16 @@ mean_depth <- mean(tot_depths$depth)
 median_depth <- median(tot_depths$depth)
 
 # results:
-#> mean_depth
-#[1] 249.4329
-#> median_depth
-#[1] 238
+# > mean_depth
+# [1] 249.4329
+# > median_depth
+# [1] 238
 
 rd_histo <- ggplot(tot_depths, aes(x = depth)) +
   geom_histogram(binwidth = 10) +
   xlim(0, 2000) +
   geom_vline(xintercept = c(0.5, 1, 2) * mean_depth, colour = "red") +
-  geom_vline(xintercept = c(0.5, 1, 2)  * median_depth, colour = "blue")
+  geom_vline(xintercept = c(0.5, 1, 2) * median_depth, colour = "blue")
 
 # write that ggplot out to stored_results to put it in a notebook
 write_rds(rd_histo, path = "stored_results/008/rd_histo.rds", compress = "xz")
@@ -147,14 +146,15 @@ Our previous results are in `stored_results/008/old-way-average-read-depths-near
 
 ```{r}
 new_depths <- read_tsv("stored_results/008/per-base-mean-depth-by-reviewer-recommendation.txt",
-                       col_names = c("vcf_name", "num_bp_in_keepers", "tot_keepers", "mean_read_depth")) %>%
+  col_names = c("vcf_name", "num_bp_in_keepers", "tot_keepers", "mean_read_depth")
+) %>%
   mutate(vcf_name = str_replace(vcf_name, "\\.rmdup.*$", ""))
 old_depths <- read_tsv("stored_results/008/old-way-average-read-depths-near-greb1.tsv")
 ```
 
 Make a plot of the distribution of new depth values:
 ```{r}
-ggplot(new_depths, aes(x = mean_read_depth)) + 
+ggplot(new_depths, aes(x = mean_read_depth)) +
   geom_histogram()
 ```
 
@@ -192,7 +192,7 @@ preferable approach suggested by the referee:
 ```{r}
 new_depths %>%
   left_join(old_depths, by = "vcf_name") %>%
-  ggplot(aes(x = old_way_read_depth, y = mean_read_depth)) + 
+  ggplot(aes(x = old_way_read_depth, y = mean_read_depth)) +
   geom_point(shape = 21, colour = "blue") +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed")
 ```
@@ -323,9 +323,9 @@ First, read the results in and wrangle into tidy format and join with meta data
 ```{r}
 meta <- read_csv("data/wgs-chinook-samples.csv") %>%
   mutate(pop = str_replace_all(Population, "Spring|Late Fall|Fall", "") %>%
-           str_replace_all(., "Hatchery", "H." ) %>%
-           str_replace_all(., "Creek", "Ck.") %>%
-           str_replace_all(., "River", "R."))
+    str_replace_all(., "Hatchery", "H.") %>%
+    str_replace_all(., "Creek", "Ck.") %>%
+    str_replace_all(., "River", "R."))
 bammy <- read_lines("stored_results/008/bam-fish-names.txt")
 
 mb516 <- read_tsv("stored_results/008/5.16Mb.multicov", col_names = FALSE) %>%
@@ -358,7 +358,6 @@ pred_depths <- bpcov %>%
   spread(key = group, value = Xb) %>%
   mutate(pred_FLFW = Spring * Tflfw / Tspring) %>%
   mutate(obs_pred_ratio = FLFW / pred_FLFW)
-
 ```
 
 Now, let's make an initial picture of that to see what it looks like.
@@ -400,8 +399,10 @@ fasta_lines <- read_lines("stored_results/008/NC_037124.1-12300000-12330000.fna.
 fasta_vec <- paste(fasta_lines, collapse = "") %>%
   strsplit(., "") %>%
   `[[`(1)
-bases <- tibble(pos = seq(from = 12300000, by = 1, length = length(fasta_vec)),
-                ref = fasta_vec) %>%
+bases <- tibble(
+  pos = seq(from = 12300000, by = 1, length = length(fasta_vec)),
+  ref = fasta_vec
+) %>%
   mutate(repeat_status = ifelse(str_detect(ref, "[a-z]"), "soft-masked", "not masked"))
 ```
 
@@ -412,7 +413,8 @@ pred_depths2 <- pred_depths %>%
 
 # get the domains that we defined above, too
 domains <- read_tsv("stored_results/008/rough-dupie-regions.bed",
-                    col_names = c("chrom", "start", "stop", "name"))
+  col_names = c("chrom", "start", "stop", "name")
+)
 
 odds <- domains %>% slice(seq(1, n(), by = 2))
 evens <- domains %>% slice(seq(2, n(), by = 2))
@@ -442,13 +444,13 @@ Doubles <- domains %>%
 
 
 g100 <- ggplot() +
-  geom_rect(data = Doubles, mapping = aes(xmin = start/1e6, xmax = stop/1e6), ymin = -Inf, ymax = Inf, fill = "orange", colour = NA, alpha = 0.25) +
-  geom_rect(data = Singles, mapping = aes(xmin = start/1e6, xmax = stop/1e6), ymin = -Inf, ymax = Inf, fill = "blue", colour = NA, alpha = 0.25) +
-  geom_point(data = pred_depths2 %>% filter(Spring > 0), mapping = aes(x = pos/1e6, y = obs_pred_ratio, colour = repeat_status), size = 0.1) +
+  geom_rect(data = Doubles, mapping = aes(xmin = start / 1e6, xmax = stop / 1e6), ymin = -Inf, ymax = Inf, fill = "orange", colour = NA, alpha = 0.25) +
+  geom_rect(data = Singles, mapping = aes(xmin = start / 1e6, xmax = stop / 1e6), ymin = -Inf, ymax = Inf, fill = "blue", colour = NA, alpha = 0.25) +
+  geom_point(data = pred_depths2 %>% filter(Spring > 0), mapping = aes(x = pos / 1e6, y = obs_pred_ratio, colour = repeat_status), size = 0.1) +
   geom_hline(yintercept = c(1, 2), linetype = "dashed", colour = "red") +
   ylim(0, 5) +
   ylab("Ratio of Observed to Predicted Read Depth") +
-  xlab("Position on Chromosome 28 (Mb)") + 
+  xlab("Position on Chromosome 28 (Mb)") +
   guides(colour = guide_legend(
     title = "Repeat Status",
     override.aes = list(size = 2)
@@ -458,7 +460,6 @@ g100 <- ggplot() +
 ggsave(g100, filename = "outputs/008/aggregate-read-depth-lines.pdf", width = 7, height = 5)
 
 g100
-  
 ```
 
 # Computing observed vs predicted reads on an individual level
@@ -491,7 +492,7 @@ total number of reads in the 5.16 Mb region at each individual on there,
 and then compute the simple predicted values.
 ```{r}
 sorty <- rdrm %>%
-  arrange(Domain, Ecotype, reads) %>% 
+  arrange(Domain, Ecotype, reads) %>%
   group_by(Domain) %>%
   mutate(Index = 1:n())
 
@@ -513,7 +514,7 @@ source("R/define_fcolors_all_sf.R")
 g <- ggplot(dsrws, aes(x = pred_domain_reads, y = reads, fill = Ecotype)) +
   geom_point(shape = 21, stroke = 0.1) +
   scale_fill_manual(values = fcolors_all_sf) +
-  facet_wrap(~ Domain, ncol = 2) +
+  facet_wrap(~Domain, ncol = 2) +
   geom_abline(intercept = 0, slope = 1, linetype = "dotted") +
   geom_abline(intercept = 0, slope = 2, linetype = "dashed")
 
@@ -544,14 +545,16 @@ on each haplotype, according to their ecotype.
 ```{r}
 NumS_alle <- dr_bh %>%
   group_by(Indiv, haplo_name, ecotype) %>%
-  summarise(numS_alleles = sum(alle2 == "S"),
-            fracS_alleles = numS_alleles / n())
+  summarise(
+    numS_alleles = sum(alle2 == "S"),
+    fracS_alleles = numS_alleles / n()
+  )
 ```
 And now make a histogram of that:
 ```{r}
 ggplot(NumS_alle, aes(x = fracS_alleles, fill = ecotype)) +
-  geom_histogram(bins = 25, colour = "black", size = 0.1) + 
-  facet_wrap(~ ecotype) +
+  geom_histogram(bins = 25, colour = "black", size = 0.1) +
+  facet_wrap(~ecotype) +
   expand_limits(x = 0) +
   scale_fill_manual(values = fcolors_all_sf) +
   theme_bw()
@@ -564,12 +567,14 @@ within them.
 ```{r}
 NumS_alle_by_indiv <- NumS_alle %>%
   group_by(Indiv, ecotype) %>%
-  summarise(numS_alleles = sum(numS_alleles),
-            fracS_alleles = mean(fracS_alleles))
+  summarise(
+    numS_alleles = sum(numS_alleles),
+    fracS_alleles = mean(fracS_alleles)
+  )
 
 ggplot(NumS_alle_by_indiv, aes(x = fracS_alleles, fill = ecotype)) +
-  geom_histogram(bins = 25, colour = "black", size = 0.1) + 
-  facet_wrap(~ ecotype) +
+  geom_histogram(bins = 25, colour = "black", size = 0.1) +
+  facet_wrap(~ecotype) +
   expand_limits(x = 0) +
   scale_fill_manual(values = fcolors_all_sf) +
   theme_bw()
@@ -609,14 +614,13 @@ indy_pred_by_spring <- rdrm_new_domain %>%
     Indiv %in% likely_hets$Indiv ~ "Heterozygous",
     TRUE ~ "Homozygous"
   ))
-
 ```
 
 Now, we should be ready to make a plot.
 ```{r}
 ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type, colour = Diplotype)) +
   geom_point(shape = 21, size = 2.0) +
-  facet_wrap(~ Domain) +
+  facet_wrap(~Domain) +
   scale_fill_manual(values = fcolors_all_sf) +
   theme_bw()
 ```
@@ -627,7 +631,7 @@ use that.
 ```{r}
 g101 <- ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type)) +
   geom_point(shape = 21, size = 2.5, stroke = 0.3) +
-  facet_wrap(~ Domain) +
+  facet_wrap(~Domain) +
   scale_fill_manual(values = fcolors_all_sf) +
   theme_bw() +
   geom_abline(slope = c(1, 2), intercept = 0, linetype = "dashed") +

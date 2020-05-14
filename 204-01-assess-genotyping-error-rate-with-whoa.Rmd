@@ -65,7 +65,7 @@ extreme deficits of heterozygotes.
 
 ```{sh}
 # get names of the fall and late fall central valley fish:
-bcftools query -l intermediates/204/imputed-all-fish-with-DP.vcf.gz | \
+bcftools query -l intermediates/004/almost-ready-for-imputation.vcf | \
   awk '/San_Joaquin_River_Fall/ || /Coleman_Hatchery_Late_Fall/ || Feather_River_Hatchery_Fall' \
   > intermediates/204/cv-fall-run-names.txt 
 
@@ -161,7 +161,7 @@ Let's plot the traces:
 ```{r}
 binned$m_traces %>%
   left_join(binned$m_posteriors %>% select(bin, mean_dp)) %>%
-ggplot(., aes(x = sweep, y = value)) +
+  ggplot(., aes(x = sweep, y = value)) +
   geom_line() +
   facet_wrap(~ as.factor(mean_dp))
 ```
@@ -192,20 +192,20 @@ dpjoins <- binned$m_posteriors %>%
 
 vt_with_hmr <- vt %>%
   left_join(dpjoins, by = "DP") %>%
-  mutate(est_hmr = ifelse(is.na(est_hmr), 0.00138, est_hmr))  # if DP > 5 just say het miscall rate is 0.00138
+  mutate(est_hmr = ifelse(is.na(est_hmr), 0.00138, est_hmr)) # if DP > 5 just say het miscall rate is 0.00138
 
 vt_with_hmr %>%
   separate(gt_GT, into = c("a", "b"), convert = TRUE, sep = "\\|") %>%
   gather(key = "gene_copy", value = "allele", a, b) %>%
   group_by(POS) %>%
-  mutate(n1 = sum(allele == 1),
-         n0 = sum(allele == 0)
+  mutate(
+    n1 = sum(allele == 1),
+    n0 = sum(allele == 0)
   ) %>%
   mutate(het_freq = 2 * n1 / (n0 + n1) * n0 / (n0 + n1)) %>%
   mutate(exp_geno_rate = het_freq * est_hmr) %>%
   ungroup() %>%
   summarise(mean_est_geno_err_rate = mean(exp_geno_rate))
-
 ```
 
 So, if we use the rate of heterozygote miscalls estimated here from

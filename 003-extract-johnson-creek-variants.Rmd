@@ -51,7 +51,7 @@ to run that last command.
 Now, let's have a look at the dotplot:
 ```{r}
 dots <- readr::read_tsv("intermediates/003/lastz_workdir/step=20_notransition_inner=1000_identity=97.rdp")
-plot(dots,type="l")
+plot(dots, type = "l")
 ```
 
 OK.  Their assemply is a little different, but it looks like it is right on track.
@@ -77,37 +77,39 @@ Now we compare the two aligned sequences, focusing on isolated SNPs and simple i
 It will be easier to assess how well that is doing, too.
 ```{r}
 # ts = target_seq.  qs = query seq.
-tq_seqs <- tibble(ts = toupper(read_lines("./intermediates/003/lastz_workdir/tmp_step=20_notransition_inner=1000_identity=97.001.column")),
-       qs = toupper(read_lines("./intermediates/003/lastz_workdir/tmp_step=20_notransition_inner=1000_identity=97.002.column"))
+tq_seqs <- tibble(
+  ts = toupper(read_lines("./intermediates/003/lastz_workdir/tmp_step=20_notransition_inner=1000_identity=97.001.column")),
+  qs = toupper(read_lines("./intermediates/003/lastz_workdir/tmp_step=20_notransition_inner=1000_identity=97.002.column"))
 )
 
-# here is a little R function that I can pass that into which will create a report of variants that 
+# here is a little R function that I can pass that into which will create a report of variants that
 # includes simple insertions and deletions and simple SNPs
-extract_variants_between_two_seqs <-   function(S) {
+extract_variants_between_two_seqs <- function(S) {
   # first, add another column which says whether the sequence region is a multinucleotide area.
-  # This is a region that is an unbroken series of records in which either the target or the 
+  # This is a region that is an unbroken series of records in which either the target or the
   # query or both have a "-" or in which the target and query mismatch.  The way we will go about this
   # is first making a base_mismatch column (bm) which is TRUE if and only if the qs and ts are neither "-"
   # and also if the the bases  mismatch.  We also want to record whether the row is
   # in a dash-block (db), i.e. if one or the other or both of the columns is "-". While we are at it
   # we will number the target sequence bases that are not "-"'s in the Otsh_v1.0 reference, because those, in fact, are the positions
   # relative to the target reference sequence.
-  
+
   # Ultimately, we will call an MNP-block-candidate as any collections of rows in which there is
-  # an unbroken path through bm and db rows.  We will filter this later to toss out those 
+  # an unbroken path through bm and db rows.  We will filter this later to toss out those
   # MNP-candidates that are just adjacent SNPs (basically those are MNP-block-candidates
   # that have no dashes in them).
   S2 <- S %>%
-    mutate(bm = (qs != "-" & ts != "-") & qs != ts,
-           db = (qs == "-" | ts == "-"),
-           pos = {
-             tp = rep(NA, length.out = n()); 
-             tp[ts != "-"] <- 1:sum(ts != "-"); 
-             tp
-             },  # this is a little ugly but gets the job done
-           mnp_bc_tmp = bm | db
-           )
-  
+    mutate(
+      bm = (qs != "-" & ts != "-") & qs != ts,
+      db = (qs == "-" | ts == "-"),
+      pos = {
+        tp <- rep(NA, length.out = n())
+        tp[ts != "-"] <- 1:sum(ts != "-")
+        tp
+      }, # this is a little ugly but gets the job done
+      mnp_bc_tmp = bm | db
+    )
+
   # now we want to keep a record of those positions in which both
   # target and sequence are the same, and are not N's (and not "-"s)
   # to know which SNPs we can say the Narum fish had the reference base on
@@ -115,41 +117,41 @@ extract_variants_between_two_seqs <-   function(S) {
     filter(ts %in% c("A", "C", "G", "T") & ts == qs) %>%
     rename(POS = pos, REF = ts, Narum = qs) %>%
     select(POS, REF, Narum)
-  
-  # now, we number these mnp-block-candidates so we can group on them.  We use rle to give the 
+
+  # now, we number these mnp-block-candidates so we can group on them.  We use rle to give the
   # candidates even indexes
   S2rle <- rle(S2$mnp_bc_tmp)
-  
+
   # we will define a block as being simple SNPs if that is the only type of variant found in the block
   # (and note that many of these will be of length 1).  But, we will toss from consideration in that case
   # any simple SNP block that includes any N's in the target or the query.
-  
+
   # we will only call something a simple indel block if there are no more than 200 positions in it.  (It appears
   # that GATK has returned indels up to 193 in length in our WGS data, so I will stick with something around that size.)
   S3 <- S2 %>%
-    mutate(mnp_bc_flag = rep(1:length(S2rle$values), S2rle$lengths) ) %>%
+    mutate(mnp_bc_flag = rep(1:length(S2rle$values), S2rle$lengths)) %>%
     group_by(mnp_bc_flag) %>%
     mutate(are_simple_snps = mnp_bc_tmp & !any(db) & !any(ts == "N" | qs == "N")) %>%
     mutate(are_simple_indels = mnp_bc_tmp & (all(qs == "-") | all(ts == "-")) & n() < 200) %>%
     ungroup()
-  
+
   # OK, now, in the simple indels we have to include the position immediately before each true_mnp_block.  (This position
   # should (if I have done everything right) match between target and query).
   S3rle <- rle(S3$are_simple_indels)
-  
+
   # to group the row before each of these true mnp_blocks with the block
   # I just make indices in which the odd ones are 1 less in length and the even ones
   # are 1 more in length.  In order to get things to the right length we need to test whether
   # it is ending in a true mnp block or not.
-  s3reps <- rep(1:length(S3rle$values), S3rle$lengths + rep(c(-1,1), length.out = length(S3rle$values)))
-  if(S3$are_simple_indels[length(S3$are_simple_indels)] == FALSE) {
+  s3reps <- rep(1:length(S3rle$values), S3rle$lengths + rep(c(-1, 1), length.out = length(S3rle$values)))
+  if (S3$are_simple_indels[length(S3$are_simple_indels)] == FALSE) {
     s3reps[length(s3reps) + 1] <- s3reps[length(s3reps)]
   }
-  
+
   S4 <- S3 %>%
-    mutate(simple_indels_grp_idxs =  s3reps)
-  
-  
+    mutate(simple_indels_grp_idxs = s3reps)
+
+
   # now all that remains is picking out the REF and ALT alleles at each position
   # (simple SNPs first, then simple indels), and then sorting them all back into order.
   # We will carry out those operations sepaerately for snps and indes
@@ -157,28 +159,31 @@ extract_variants_between_two_seqs <-   function(S) {
     filter(are_simple_snps == TRUE) %>%
     mutate(POS = pos, REF = ts, ALT = qs) %>%
     select(POS, REF, ALT)
-  
+
   S4_indels <- S4 %>%
     filter(simple_indels_grp_idxs %% 2 == 0) %>%
     group_by(simple_indels_grp_idxs) %>%
-    summarise(POS = pos[1], 
-              REF = str_replace_all(paste(ts, collapse = ""), "-", ""),
-              ALT = str_replace_all(paste(qs, collapse = ""), "-", "")) %>%
+    summarise(
+      POS = pos[1],
+      REF = str_replace_all(paste(ts, collapse = ""), "-", ""),
+      ALT = str_replace_all(paste(qs, collapse = ""), "-", "")
+    ) %>%
     ungroup() %>%
     select(-simple_indels_grp_idxs)
-  
-  
+
+
   # now we return it
   ret <- bind_rows(S4_snps, S4_indels) %>%
     arrange(POS) %>%
     rename(Narum_ALT = ALT)
-    
-  
-  
-  list(variants = ret,
-       ref_matches = ref_matches)
-}
 
+
+
+  list(
+    variants = ret,
+    ref_matches = ref_matches
+  )
+}
 ```
 
 Let's give it a whirl, and extract those variants:

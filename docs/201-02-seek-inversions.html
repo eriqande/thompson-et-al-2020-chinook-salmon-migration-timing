@@ -257,7 +257,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">Seek Inversions from Mispaired and Split Reads</h1>
 <h4 class="author">Eric C. Anderson</h4>
-<h4 class="date">Last Updated: 2020-05-11</h4>
+<h4 class="date">Last Updated: 2020-05-14</h4>
 
 </div>
 
@@ -272,15 +272,17 @@ dir.create(&quot;intermediates/201&quot;, recursive = TRUE, showWarnings = FALSE
 </div>
 <div id="read-in-and-explore-the-results-computed-on-the-cluster" class="section level1">
 <h1>Read in and explore the results computed on the cluster</h1>
-<pre class="r"><code>depths &lt;- read_tsv(&quot;stored_results/201/read-depths-by-base-pair-and-pair-type.tsv.gz&quot;) 
+<pre class="r"><code>depths &lt;- read_tsv(&quot;stored_results/201/read-depths-by-base-pair-and-pair-type.tsv.gz&quot;)
 
 d2 &lt;- depths %&gt;%
-  mutate(fall_mispair_ppn = fall.aberrant.bam / fall.2Mb.bam,
-         spring_mispair_ppn = spring.aberrant.bam / spring.2Mb.bam)</code></pre>
+  mutate(
+    fall_mispair_ppn = fall.aberrant.bam / fall.2Mb.bam,
+    spring_mispair_ppn = spring.aberrant.bam / spring.2Mb.bam
+  )</code></pre>
 <p>Now, plot those alongside one another.</p>
 <pre class="r"><code>quick_lines &lt;- function(d2) {
   ggplot() +
-    geom_line(data = d2 %&gt;% filter(!is.na(spring_mispair_ppn)), mapping = aes(x = POS, y = spring_mispair_ppn), colour = &quot;gold&quot;) + 
+    geom_line(data = d2 %&gt;% filter(!is.na(spring_mispair_ppn)), mapping = aes(x = POS, y = spring_mispair_ppn), colour = &quot;gold&quot;) +
     geom_line(data = d2 %&gt;% filter(!is.na(fall_mispair_ppn)), mapping = aes(x = POS, y = -fall_mispair_ppn), colour = &quot;blue&quot;)
 }
 
@@ -294,9 +296,8 @@ mp</code></pre>
 <pre class="r"><code>filt_rd &lt;- function(data, X, P, D) {
   data %&gt;%
     filter((fall.2Mb.bam &gt; X | spring.2Mb.bam &gt; X) &amp;
-             (spring_mispair_ppn &gt; P | fall_mispair_ppn &gt; P) &amp; 
-             (abs(spring_mispair_ppn - fall_mispair_ppn) &gt; D)
-    )
+      (spring_mispair_ppn &gt; P | fall_mispair_ppn &gt; P) &amp;
+      (abs(spring_mispair_ppn - fall_mispair_ppn) &gt; D))
 }</code></pre>
 <p>First just try filtering:</p>
 <pre class="r"><code>filt1 &lt;- filt_rd(d2, 35, 0.8, 0.5)
@@ -314,12 +315,14 @@ filt1 %&gt;% select(POS, starts_with(&quot;fall&quot;), starts_with(&quot;spring
 <div id="now-look-for-split-reads" class="section level1">
 <h1>Now, look for split reads</h1>
 <pre class="r"><code>dsplit &lt;- depths %&gt;%
-  mutate(fall_split_ppn = fall.split_reads.bam / fall.2Mb.bam,
-         spring_split_ppn = spring.split_reads.bam / spring.2Mb.bam)</code></pre>
+  mutate(
+    fall_split_ppn = fall.split_reads.bam / fall.2Mb.bam,
+    spring_split_ppn = spring.split_reads.bam / spring.2Mb.bam
+  )</code></pre>
 <p>And plot those all along the 2 Mb:</p>
 <pre class="r"><code>split_ppn &lt;- ggplot() +
-    geom_line(data = dsplit %&gt;% filter(!is.na(spring_split_ppn)), mapping = aes(x = POS, y = spring_split_ppn), colour = &quot;gold&quot;) + 
-    geom_line(data = dsplit %&gt;% filter(!is.na(fall_split_ppn)), mapping = aes(x = POS, y = -fall_split_ppn), colour = &quot;blue&quot;)
+  geom_line(data = dsplit %&gt;% filter(!is.na(spring_split_ppn)), mapping = aes(x = POS, y = spring_split_ppn), colour = &quot;gold&quot;) +
+  geom_line(data = dsplit %&gt;% filter(!is.na(fall_split_ppn)), mapping = aes(x = POS, y = -fall_split_ppn), colour = &quot;blue&quot;)
 
 ggsave(split_ppn, filename = &quot;outputs/201/split_read_ppn_spring_v_fall.png&quot;, width = 15, height = 7)
 
@@ -329,9 +332,8 @@ split_ppn</code></pre>
 <pre class="r"><code>filt_for_splits &lt;- function(data, X, P, D) {
   data %&gt;%
     filter((fall.2Mb.bam &gt; X | spring.2Mb.bam &gt; X) &amp;
-             (spring_split_ppn &gt; P | fall_split_ppn &gt; P) &amp; 
-             (abs(spring_split_ppn - fall_split_ppn) &gt; D)
-    )
+      (spring_split_ppn &gt; P | fall_split_ppn &gt; P) &amp;
+      (abs(spring_split_ppn - fall_split_ppn) &gt; D))
 }
 
 
@@ -360,7 +362,7 @@ filt2</code></pre>
 ##  collate  en_US.UTF-8                 
 ##  ctype    en_US.UTF-8                 
 ##  tz       America/Denver              
-##  date     2020-05-11                  
+##  date     2020-05-14                  
 ## 
 ## ─ Packages ───────────────────────────────────────────────────────────────────
 ##  package     * version date       lib source        
@@ -432,7 +434,7 @@ filt2</code></pre>
 <h1>Running Time</h1>
 <p>Running the code and rendering this notebook required approximately this much time on a Mac laptop of middling speed:</p>
 <pre class="r"><code>Sys.time() - start_time</code></pre>
-<pre><code>## Time difference of 3.660236 mins</code></pre>
+<pre><code>## Time difference of 3.538503 mins</code></pre>
 <div class="references">
 <h1>Citations</h1>
 </div>

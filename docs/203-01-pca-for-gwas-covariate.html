@@ -373,8 +373,9 @@ meta &lt;- read_csv(&quot;data/wgs-chinook-samples.csv&quot;) %&gt;%
       &quot;Spring&quot; =  &quot;Spring Run&quot;,
       &quot;Late Fall&quot; =  &quot;Late Fall Run&quot;,
       &quot;Winter&quot; =  &quot;Winter Run&quot;,
-    )) %&gt;%
-  mutate(  # make a factor to be able to order the populations a little better
+    )
+  ) %&gt;%
+  mutate( # make a factor to be able to order the populations a little better
     Population_f = factor(
       Population,
       levels = c(
@@ -385,16 +386,18 @@ meta &lt;- read_csv(&quot;data/wgs-chinook-samples.csv&quot;) %&gt;%
         &quot;Feather R.H.&quot;,
         &quot;Salmon R.&quot;,
         &quot;Trinity R.H&quot;
-      )))
+      )
+    )
+  )
 
 # and make sure that our colors or here
 pca_colors &lt;- c(
-  `Salmon R.` =  &quot;#bae4b3&quot;,
-  `Feather R.H.` =  &quot;#fee5d9&quot;,
-  `Trinity R.H` =  &quot;#238b45&quot;,
-  `San Joaquin R.` =  &quot;#fb6a4a&quot;,
-  `Coleman H.` =  &quot;#fcbba1&quot;,
-  `Sacramento R. Winter Run` =  &quot;#a50f15&quot;,
+  `Salmon R.` = &quot;#bae4b3&quot;,
+  `Feather R.H.` = &quot;#fee5d9&quot;,
+  `Trinity R.H` = &quot;#238b45&quot;,
+  `San Joaquin R.` = &quot;#fb6a4a&quot;,
+  `Coleman H.` = &quot;#fcbba1&quot;,
+  `Sacramento R. Winter Run` = &quot;#a50f15&quot;,
   `Butte Ck.` = &quot;#fc9272&quot;
 )
 # and set our shape values
@@ -407,7 +410,7 @@ pca_shapes &lt;- c(
 
 # function
 prep_output &lt;- function(A) {
-  
+
   # first for each individual i, get the number of sites at which
   # that individual had a read and also another individual, j, averaged
   # over all j.  This tells us on average how many markers went into
@@ -418,75 +421,81 @@ prep_output &lt;- function(A) {
     vcf_name = A$sample_names,
     ave_sites = rowMeans(m) * ncol(m) / (ncol(m) - 1)
   )
-    
+
   # do the whole eigendecomposition on the standard covariance matrix.
   eig &lt;- eigen(A$Cov)
   colnames(eig$vectors) &lt;- sprintf(&quot;PC-%02d&quot;, 1:ncol(eig$vectors))
-    
-  
-  pca_tib &lt;- as_tibble(eig$vectors[,1:6]) %&gt;%
+
+
+  pca_tib &lt;- as_tibble(eig$vectors[, 1:6]) %&gt;%
     mutate(vcf_name = A$sample_names) %&gt;%
-    select(vcf_name, everything()) 
-  
+    select(vcf_name, everything())
+
   pca_long &lt;- pca_tib %&gt;%
     tidyr::gather(., key = &quot;PC&quot;, &quot;val&quot;, -vcf_name)
 
   # then expand a grid of the possible comparisons (ordered)
-  pca_pairs &lt;- expand.grid(vcf_name = pca_tib$vcf_name,
-                      PCx = sprintf(&quot;PC-%02d&quot;, 1:6),
-                      PCy = sprintf(&quot;PC-%02d&quot;, 1:6),
-                      stringsAsFactors = FALSE) %&gt;%
+  pca_pairs &lt;- expand.grid(
+    vcf_name = pca_tib$vcf_name,
+    PCx = sprintf(&quot;PC-%02d&quot;, 1:6),
+    PCy = sprintf(&quot;PC-%02d&quot;, 1:6),
+    stringsAsFactors = FALSE
+  ) %&gt;%
     tibble::as_tibble() %&gt;%
     dplyr::left_join(., pca_long, by = c(&quot;vcf_name&quot;, &quot;PCx&quot; = &quot;PC&quot;)) %&gt;%
     dplyr::rename(val_x = val) %&gt;%
     dplyr::left_join(pca_long, by = c(&quot;vcf_name&quot;, &quot;PCy&quot; = &quot;PC&quot;)) %&gt;%
-    dplyr::rename(val_y = val)  %&gt;% 
+    dplyr::rename(val_y = val) %&gt;%
     left_join(ave_sites, by = &quot;vcf_name&quot;) %&gt;% # and here, join on some meta data
     left_join(meta, by = &quot;vcf_name&quot;)
-  
-  
+
+
   # and now we are going to the the same sort of thing, but on the covariance
   # matrix computed by the corrlations estimated a la Weir and Goudet
   WaG &lt;- (A$IBS - A$Mt_S) / (1 - A$Mt_S)
   eig &lt;- eigen(WaG)
   colnames(eig$vectors) &lt;- sprintf(&quot;PC-%02d&quot;, 1:ncol(eig$vectors))
-    
-  
-  pca_tib &lt;- as_tibble(eig$vectors[,1:6]) %&gt;%
+
+
+  pca_tib &lt;- as_tibble(eig$vectors[, 1:6]) %&gt;%
     mutate(vcf_name = A$sample_names) %&gt;%
-    select(vcf_name, everything()) 
-  
+    select(vcf_name, everything())
+
   pca_long &lt;- pca_tib %&gt;%
     tidyr::gather(., key = &quot;PC&quot;, &quot;val&quot;, -vcf_name)
-  
-  pcp &lt;- expand.grid(vcf_name = pca_tib$vcf_name,
-                      PCx = sprintf(&quot;PC-%02d&quot;, 1:6),
-                      PCy = sprintf(&quot;PC-%02d&quot;, 1:6),
-                      stringsAsFactors = FALSE) %&gt;%
+
+  pcp &lt;- expand.grid(
+    vcf_name = pca_tib$vcf_name,
+    PCx = sprintf(&quot;PC-%02d&quot;, 1:6),
+    PCy = sprintf(&quot;PC-%02d&quot;, 1:6),
+    stringsAsFactors = FALSE
+  ) %&gt;%
     tibble::as_tibble() %&gt;%
     dplyr::left_join(., pca_long, by = c(&quot;vcf_name&quot;, &quot;PCx&quot; = &quot;PC&quot;)) %&gt;%
     dplyr::rename(WaG_x = val) %&gt;%
     dplyr::left_join(pca_long, by = c(&quot;vcf_name&quot;, &quot;PCy&quot; = &quot;PC&quot;)) %&gt;%
     dplyr::rename(WaG_y = val)
-  
+
   # then join those both and return them
   left_join(pcp, pca_pairs,
-            by = c(&quot;vcf_name&quot;, &quot;PCx&quot;, &quot;PCy&quot;))
+    by = c(&quot;vcf_name&quot;, &quot;PCx&quot;, &quot;PCy&quot;)
+  )
 }</code></pre>
 <p>Then use that to make a figure:</p>
 <pre class="r"><code>covar_114 &lt;- read_rds(&quot;stored_results/203/covar-matrix-etc-114-spring-fall-fish.rds&quot;)
 allf &lt;- prep_output(covar_114)
 
-bp &lt;- ggplot(allf, aes(x = val_x, y = val_y, fill = Population_f, shape = Ecotype)) + 
+bp &lt;- ggplot(allf, aes(x = val_x, y = val_y, fill = Population_f, shape = Ecotype)) +
   facet_grid(PCy ~ PCx) +
   geom_point(size = 3, stroke = 0.15) +
   scale_fill_manual(values = pca_colors) +
   scale_shape_manual(values = pca_shapes) +
   theme_bw() +
-  guides(fill = guide_legend(override.aes = list(shape = 22, stroke = 0.1, size = 6)),
-         shape = guide_legend(override.aes = list(stroke = 0.35, size = 4))
-         )
-  
+  guides(
+    fill = guide_legend(override.aes = list(shape = 22, stroke = 0.1, size = 6)),
+    shape = guide_legend(override.aes = list(stroke = 0.35, size = 4))
+  )
+
 dir.create(&quot;outputs/203&quot;, recursive = TRUE, showWarnings = FALSE)
 ggsave(bp, filename = &quot;outputs/203/spring-fall-pca.pdf&quot;, width = 20, height = 20)
 
@@ -514,7 +523,7 @@ write.table(eigenvectors, file = &quot;stored_results/203/eigenvectors.tsv&quot;
 ##  collate  en_US.UTF-8                 
 ##  ctype    en_US.UTF-8                 
 ##  tz       America/Denver              
-##  date     2020-05-11                  
+##  date     2020-05-14                  
 ## 
 ## ─ Packages ───────────────────────────────────────────────────────────────────
 ##  package     * version date       lib source        
@@ -586,7 +595,7 @@ write.table(eigenvectors, file = &quot;stored_results/203/eigenvectors.tsv&quot;
 <h1>Running Time</h1>
 <p>Running the code and rendering this notebook required approximately this much time on a Mac laptop of middling speed:</p>
 <pre class="r"><code>Sys.time() - start_time</code></pre>
-<pre><code>## Time difference of 4.472841 secs</code></pre>
+<pre><code>## Time difference of 4.239197 secs</code></pre>
 </div>
 <div id="citations" class="section level1">
 <h1>Citations</h1>

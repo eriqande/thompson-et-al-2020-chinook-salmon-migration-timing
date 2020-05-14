@@ -143,18 +143,24 @@ FocReg %>%
 
 Let's have a quick look at the interesting ones:
 ```{r}
-FocReg %>% filter(snp_eff_effect != "MODIFIER") %>% select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN)
+FocReg %>%
+  filter(snp_eff_effect != "MODIFIER") %>%
+  select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN)
 ```
 
 So, now, let's just look at the HIGH and MODERATE ones there:
 ```{r}
-FocReg %>% filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>% select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN)
+FocReg %>%
+  filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>%
+  select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN)
 ```
 
 
 Let's write this out:
 ```{r}
-candidates <- FocReg %>% filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>% select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN, everything())
+candidates <- FocReg %>%
+  filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>%
+  select(CHROM, POS, snp_eff_effect, snp_eff_what, REF, ALT, ANN, everything())
 
 write_rds(candidates, path = "outputs/005/candidate-mutations-12.1_to_12.6.rds")
 ```
@@ -223,7 +229,6 @@ big_haps3 <- big_haps2 %>%
   mutate(num_S_in_RoSA = sum(alle2[POS > 12.26e6 & POS < 12.29e6] == "S")) %>%
   semi_join(candidates, by = "POS") %>%
   ungroup()
-  
 ```
 
 Look at the distribution of number of S alleles in the RoSA:
@@ -275,8 +280,10 @@ OK, we need to know what the total number of haplotypes is in there too:
 ```{r}
 big_haps4 %>%
   group_by(POS, haplo_group) %>%
-  summarise(freq_of_S_allele = sum(alle2 == "S"),
-            freq_of_F_allele = sum(alle2 != "S")) 
+  summarise(
+    freq_of_S_allele = sum(alle2 == "S"),
+    freq_of_F_allele = sum(alle2 != "S")
+  )
 ```
 
 That shows us what we expect, but it is difficult to read.  But it shows us that only two of the candidates

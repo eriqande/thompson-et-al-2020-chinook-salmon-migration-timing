@@ -241,9 +241,26 @@ for S in 1.5X full-depth; do
 done
 
 ```
-Now, we will bring the `intermediates/204-02/re-annotated` directory back to my laptop, and we will also grab
-`intermediates/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz` and put it there.
 
+At the end of that we have these files in `intermediates/204-02`:
+```sh
+intermediates/204-02/entire-vcfs:
+full-depth-for-beagle-reheadered.vcf.gz
+full-depth-for-beagle-reheadered.vcf.gz.csi
+
+intermediates/204-02/re-annotated:
+1.5X-imputed-reannotated.vcf.gz
+1.5X-imputed-reannotated.vcf.gz.csi
+1.5X-phased-reannotated.vcf.gz
+1.5X-phased-reannotated.vcf.gz.csi
+full-depth-imputed-reannotated.vcf.gz
+full-depth-imputed-reannotated.vcf.gz.csi
+full-depth-phased-reannotated.vcf.gz
+full-depth-phased-reannotated.vcf.gz.csi
+```
+
+We save those into the repo in `stored_results/204-02` to use them for downstream
+analyses.
 
 # Analyzing the results on my laptop
 
@@ -263,10 +280,10 @@ posies <- read_rds("./stored_results/004/big_haps2.rds") %>%
 
 
 long_tibble <- list(
-  thinned = read.vcfR("intermediates/204-02/re-annotated/1.5X-phased-reannotated.vcf.gz") %>% vcfR2tidy() %>% .$gt,
-  full_depth = read.vcfR("intermediates/204-02/re-annotated/full-depth-phased-reannotated.vcf.gz") %>% vcfR2tidy() %>% .$gt,
-  not_imputed = read.vcfR("intermediates/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz") %>% vcfR2tidy() %>% .$gt
-) %>% 
+  thinned = read.vcfR("stored_results/204-02/re-annotated/1.5X-phased-reannotated.vcf.gz") %>% vcfR2tidy() %>% .$gt,
+  full_depth = read.vcfR("stored_results/204-02/re-annotated/full-depth-phased-reannotated.vcf.gz") %>% vcfR2tidy() %>% .$gt,
+  not_imputed = read.vcfR("stored_results/204-02/entire-vcfs/full-depth-for-beagle-reheadered.vcf.gz") %>% vcfR2tidy() %>% .$gt
+) %>%
   bind_rows(.id = "scenario") %>%
   filter(POS %in% posies)
 ```
@@ -285,7 +302,7 @@ long_tibble2 <- long_tibble %>%
     gt_GT == "1/1" | gt_GT == "1|1" ~ 2L,
     TRUE ~ NA_integer_
   )) %>%
-  rename(  # finally, clean up the column names a little bit prior to pivoting wider
+  rename( # finally, clean up the column names a little bit prior to pivoting wider
     GT = gt_GT,
     DP = gt_DP,
     GTalleles = gt_GT_alleles,
@@ -304,7 +321,7 @@ long_tibble3 <- long_tibble2 %>%
   mutate(
     spring_alt_freq = mean(GT012[str_detect(Indiv, "Spring") & scenario == "thinned"]) / 2,
     fall_alt_freq = mean(GT012[str_detect(Indiv, "Fall") & scenario == "thinned"]) / 2
-    ) %>%
+  ) %>%
   ungroup()
 ```
 
@@ -319,7 +336,7 @@ wider_tibble <- long_tibble3 %>%
   pivot_wider(
     names_from = c(scenario),
     values_from = c(GT012, AD_ref, AD_alt)
-              )
+  )
 ```
 
 
@@ -379,7 +396,7 @@ cimp %>%
   mutate(correct = GT012_full_depth == GT012_thinned) %>%
   group_by(correct) %>%
   summarise(num = sum(n)) %>%
-  mutate(ppn = num/sum(num))
+  mutate(ppn = num / sum(num))
 ```
 
 ##### Compare to alle freqs
@@ -387,13 +404,15 @@ cimp %>%
 ```{r, eval=FALSE}
 # there are not super clear trends with allele frequency
 new_fish %>%
-  mutate(fcat = cut(fall_alt_freq, breaks = (-1:11)/10),
-         scat = cut(spring_alt_freq, breaks = (-1:11)/10)) %>%
+  mutate(
+    fcat = cut(fall_alt_freq, breaks = (-1:11) / 10),
+    scat = cut(spring_alt_freq, breaks = (-1:11) / 10)
+  ) %>%
   count(fcat, scat, GT012_not_imputed, GT012_thinned) %>%
   filter(!is.na(GT012_not_imputed) & !is.na(GT012_thinned)) %>%
   group_by(fcat, scat, GT012_not_imputed) %>%
-  mutate(ppn = n / sum(n)) %>% View()
-
+  mutate(ppn = n / sum(n)) %>%
+  View()
 ```
 
 ### Explore allele depths 
@@ -404,9 +423,10 @@ individuals have appeared somewhat imbalanced in the discordant calls.
 So, first, let's look at the ADs of het calls.  First in the not_imputed full depth ones:
 ```{r}
 new_fish %>%
-  filter(GT012_not_imputed == 1,
-         AD_ref_not_imputed < 50,
-         AD_alt_not_imputed < 50
+  filter(
+    GT012_not_imputed == 1,
+    AD_ref_not_imputed < 50,
+    AD_alt_not_imputed < 50
   ) %>%
   count(AD_ref_not_imputed, AD_alt_not_imputed) %>%
   ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = n)) +
@@ -434,22 +454,23 @@ same across all the depth categories in the plot above.  We can test that.  Firs
 up the fraction of full-depth hets called as homozygotes in each of the AD cells:
 ```{r}
 wrong_homoz_fracts <- new_fish %>%
-  mutate(thinned_AD_sum = AD_ref_thinned + AD_alt_thinned) %>% 
-  filter(GT012_not_imputed == 1,
-         AD_ref_not_imputed < 50,
-         AD_alt_not_imputed < 50
+  mutate(thinned_AD_sum = AD_ref_thinned + AD_alt_thinned) %>%
+  filter(
+    GT012_not_imputed == 1,
+    AD_ref_not_imputed < 50,
+    AD_alt_not_imputed < 50
   ) %>%
   filter(
-    !is.na(GT012_thinned), 
+    !is.na(GT012_thinned),
     thinned_AD_sum == 0 || thinned_AD_sum == 1
-    ) %>%
+  ) %>%
   group_by(AD_ref_not_imputed, AD_alt_not_imputed, GT012_thinned) %>%
-  tally() %>% 
-  mutate(ppn = n/sum(n)) %>%
+  tally() %>%
+  mutate(ppn = n / sum(n)) %>%
   summarise(
     ppn_homoz = ifelse(!any(GT012_thinned == 1), 1, 1 - ppn[GT012_thinned == 1]),
     tot_n = sum(n)
-    )
+  )
 ```
 
 Then we plot them all:
@@ -465,7 +486,7 @@ in them:
 ```{r}
 wrong_homoz_fracts %>%
   filter(tot_n >= 10) %>%
-ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
+  ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
   geom_tile() +
   scale_fill_viridis_c() +
   theme(aspect.ratio = 1)
@@ -483,22 +504,23 @@ countered by haplotypic neighborhood information.
 
 ```{r}
 wrong_homoz_fracts_impfd <- new_fish %>%
-  mutate(thinned_AD_sum = AD_ref_thinned + AD_alt_thinned) %>% 
-  filter(GT012_full_depth == 1,
-         AD_ref_not_imputed < 50,
-         AD_alt_not_imputed < 50
+  mutate(thinned_AD_sum = AD_ref_thinned + AD_alt_thinned) %>%
+  filter(
+    GT012_full_depth == 1,
+    AD_ref_not_imputed < 50,
+    AD_alt_not_imputed < 50
   ) %>%
   filter(
-    !is.na(GT012_thinned), 
+    !is.na(GT012_thinned),
     thinned_AD_sum == 0 || thinned_AD_sum == 1
-    ) %>%
+  ) %>%
   group_by(AD_ref_not_imputed, AD_alt_not_imputed, GT012_thinned) %>%
-  tally() %>% 
-  mutate(ppn = n/sum(n)) %>%
+  tally() %>%
+  mutate(ppn = n / sum(n)) %>%
   summarise(
     ppn_homoz = ifelse(!any(GT012_thinned == 1), 1, 1 - ppn[GT012_thinned == 1]),
     tot_n = sum(n)
-    )
+  )
 ```
 
 Then we plot them all:
@@ -514,7 +536,7 @@ in them:
 ```{r}
 wrong_homoz_fracts_impfd %>%
   filter(tot_n >= 10) %>%
-ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
+  ggplot(aes(x = AD_ref_not_imputed, y = AD_alt_not_imputed, fill = ppn_homoz)) +
   geom_tile() +
   scale_fill_viridis_c() +
   theme(aspect.ratio = 1)
@@ -556,7 +578,7 @@ rfocus %>%
   mutate(correct = GT012_full_depth == GT012_thinned) %>%
   group_by(correct) %>%
   summarise(num = sum(n)) %>%
-  mutate(ppn = num/sum(num))
+  mutate(ppn = num / sum(num))
 ```
 
 ### Discordance rates for simulating imputation errors
@@ -600,7 +622,8 @@ new_fish %>%
   filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
   filter(
     (GT012_thinned == 0 & GT012_full_depth == 1) |
-    (GT012_thinned == 2 & GT012_full_depth == 1))
+      (GT012_thinned == 2 & GT012_full_depth == 1)
+  )
 ```
 
 However, if we have called something as a heterozygote in the thinned data, 16% of the time it was called
@@ -634,14 +657,14 @@ errors such that probability of changes in the data are:
 est_rates_for_simulation <- tribble(
   ~imputed_genotype, ~simulated_new_genotype, ~rate,
   0, 0, 0.968,
-0, 1, 0.03,
-0, 2, 0.002,
-1, 0, 0.09,
-1, 1, 0.84,
-1, 2, 0.07,
-2, 0, 0.002,
-2, 1, 0.036,
-2, 2, 0.962
+  0, 1, 0.03,
+  0, 2, 0.002,
+  1, 0, 0.09,
+  1, 1, 0.84,
+  1, 2, 0.07,
+  2, 0, 0.002,
+  2, 1, 0.036,
+  2, 2, 0.962
 )
 est_rates_for_simulation
 ```
@@ -685,7 +708,7 @@ And now, let us look at the read depths there for the two different homozygote c
 wrong_thin_hets %>%
   count(GT012_full_depth, AD_ref_not_imputed, AD_alt_not_imputed) %>%
   filter(AD_ref_not_imputed < 40, AD_alt_not_imputed < 40) %>%
-  ggplot(aes(x = AD_ref_not_imputed, AD_alt_not_imputed, fill = n)) + 
+  ggplot(aes(x = AD_ref_not_imputed, AD_alt_not_imputed, fill = n)) +
   geom_tile() +
   facet_wrap(~GT012_full_depth) +
   scale_fill_viridis_c()
@@ -742,9 +765,9 @@ good_ball_hets %>%
   filter(!is.na(GT012_full_depth) & !is.na(GT012_thinned)) %>%
   group_by(thinned_sumAD) %>%
   mutate(
-    ppn = n/sum(n),
+    ppn = n / sum(n),
     n_sum = sum(n)
-    ) %>%
+  ) %>%
   filter(thinned_sumAD <= 6) %>%
   ggplot() +
   geom_col(aes(x = thinned_sumAD, y = ppn, fill = factor(GT012_thinned))) +

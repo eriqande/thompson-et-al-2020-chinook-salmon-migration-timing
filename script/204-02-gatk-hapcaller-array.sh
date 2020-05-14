@@ -23,6 +23,6 @@ for B in bams-1.5X-depth bams-full-read-depth; do
      -I intermediates/204-02/$B.list \
      --assembly-region-padding 1000 \
      -O $outdir/$IDX.vcf \
-     -L $region > $stdoutdir/$IDX.stdout 2> $stderrdir/$IDX.stderr
+     -L $region > $stdoutdir/${B}-$IDX.stdout 2> $stderrdir/${B}-$IDX.stderr
      
 done

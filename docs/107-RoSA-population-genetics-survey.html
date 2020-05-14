@@ -258,7 +258,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">107-Population-genetics-survey-rosa</h1>
 <h4 class="author">Neil Thompson</h4>
-<h4 class="date">Last Updated: 2020-05-11</h4>
+<h4 class="date">Last Updated: 2020-05-14</h4>
 
 </div>
 
@@ -274,11 +274,11 @@ dir.create(&quot;outputs/107&quot;, showWarnings = FALSE, recursive = TRUE)</cod
 </ol>
 <pre class="r"><code>rosa_nodups &lt;- read_rds(&quot;./data/107-RoSA-popgen-survey-data.rds&quot;)</code></pre>
 <p>First let’s look at how many samples have recombinant genotypes.</p>
-<pre class="r"><code>rosa_nodups %&gt;% 
-  filter(!str_detect(rosa,&quot;\\?&quot;)) %&gt;% 
-  mutate(is_recomb = !rosa %in% c(&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;,&quot;EEEEEEEE&quot;)) %&gt;%
+<pre class="r"><code>rosa_nodups %&gt;%
+  filter(!str_detect(rosa, &quot;\\?&quot;)) %&gt;%
+  mutate(is_recomb = !rosa %in% c(&quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;, &quot;EEEEEEEE&quot;)) %&gt;%
   group_by(is_recomb) %&gt;%
-  summarise(n_type = n()) %&gt;% 
+  summarise(n_type = n()) %&gt;%
   kable(&quot;html&quot;) %&gt;%
   kable_styling(&quot;striped&quot;, full_width = FALSE)</code></pre>
 <table class="table table-striped" style="width: auto !important; margin-left: auto; margin-right: auto;">
@@ -311,18 +311,19 @@ TRUE
 </tr>
 </tbody>
 </table>
-<pre class="r"><code>n_recomb &lt;- rosa_nodups %&gt;% 
-    filter(!str_detect(rosa,&quot;\\?&quot;)) %&gt;% 
-  mutate(is_recomb = !rosa %in% c(&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;,&quot;EEEEEEEE&quot;)) %&gt;%
+<pre class="r"><code>n_recomb &lt;- rosa_nodups %&gt;%
+  filter(!str_detect(rosa, &quot;\\?&quot;)) %&gt;%
+  mutate(is_recomb = !rosa %in% c(&quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;, &quot;EEEEEEEE&quot;)) %&gt;%
   group_by(is_recomb) %&gt;%
   summarise(n_type = n()) %&gt;%
- .[2,&quot;n_type&quot;]
+  .[2, &quot;n_type&quot;]
 
-n_nonrecomb &lt;- rosa_nodups %&gt;% 
-    filter(!str_detect(rosa,&quot;\\?&quot;)) %&gt;% 
-  mutate(is_recomb = !rosa %in% c(&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;,&quot;EEEEEEEE&quot;)) %&gt;%
+n_nonrecomb &lt;- rosa_nodups %&gt;%
+  filter(!str_detect(rosa, &quot;\\?&quot;)) %&gt;%
+  mutate(is_recomb = !rosa %in% c(&quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;, &quot;EEEEEEEE&quot;)) %&gt;%
   group_by(is_recomb) %&gt;%
-  summarise(n_type = n()) %&gt;% .[1,&quot;n_type&quot;]</code></pre>
+  summarise(n_type = n()) %&gt;%
+  .[1, &quot;n_type&quot;]</code></pre>
 There are
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
@@ -339,52 +340,58 @@ recombinants which makes a
 <div id="frequency-table-of-non-recombinant-haplotypes" class="section level1">
 <h1>Frequency table of non-recombinant haplotypes</h1>
 <p>Create a frequency table of non-recombinant genotypes in the populations we want for the paper.</p>
-<pre class="r"><code>paper_pops &lt;- c(&quot;Siletz River spring&quot;,&quot;Siletz River fall&quot;,&quot;Iron Gate hatchery fall&quot;,&quot;Salmon River spring&quot;,&quot;Salmon River fall&quot;,&quot;Salmon River unknown&quot;, &quot;Trinity River hatchery spring&quot;, &quot;Trinity River hatchery fall&quot;, &quot;Trinity River unknown&quot;,&quot;Eel River fall&quot;,&quot;Russian River fall&quot;,&quot;Sacramento River winter&quot;,&quot;Coleman hatchery late-fall&quot;,&quot;Butte Creek spring&quot;,&quot;Butte Creek fall&quot;,&quot;Butte Creek unknown&quot;,&quot;Mill-Deer Creek&quot;,&quot;Feather River hatchery spring&quot;,&quot;Feather River hatchery fall&quot;,&quot;Feather River unknown&quot;)
+<pre class="r"><code>paper_pops &lt;- c(&quot;Siletz River spring&quot;, &quot;Siletz River fall&quot;, &quot;Iron Gate hatchery fall&quot;, &quot;Salmon River spring&quot;, &quot;Salmon River fall&quot;, &quot;Salmon River unknown&quot;, &quot;Trinity River hatchery spring&quot;, &quot;Trinity River hatchery fall&quot;, &quot;Trinity River unknown&quot;, &quot;Eel River fall&quot;, &quot;Russian River fall&quot;, &quot;Sacramento River winter&quot;, &quot;Coleman hatchery late-fall&quot;, &quot;Butte Creek spring&quot;, &quot;Butte Creek fall&quot;, &quot;Butte Creek unknown&quot;, &quot;Mill-Deer Creek&quot;, &quot;Feather River hatchery spring&quot;, &quot;Feather River hatchery fall&quot;, &quot;Feather River unknown&quot;)
 
-freq_table &lt;- rosa_nodups  %&gt;%
-  filter(rosa%in%c(&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;,&quot;EEEEEEEE&quot;)) %&gt;%
-  mutate(rosa = factor(rosa, levels = c(&quot;EEEEEEEE&quot;,&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;))) %&gt;% 
+freq_table &lt;- rosa_nodups %&gt;%
+  filter(rosa %in% c(&quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;, &quot;EEEEEEEE&quot;)) %&gt;%
+  mutate(rosa = factor(rosa, levels = c(&quot;EEEEEEEE&quot;, &quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;))) %&gt;%
   group_by(pop_name) %&gt;%
   mutate(n_pop = n()) %&gt;%
-  group_by(pop_name,rosa) %&gt;%
-  mutate(n_rosa = n(),
-         freq_rosa = round(n_rosa/n_pop,3)) %&gt;%
+  group_by(pop_name, rosa) %&gt;%
+  mutate(
+    n_rosa = n(),
+    freq_rosa = round(n_rosa / n_pop, 3)
+  ) %&gt;%
   ungroup() %&gt;%
-  dplyr::select(pop_name,n_pop,rosa,freq_rosa) %&gt;% 
-  distinct(pop_name,rosa, .keep_all=TRUE) %&gt;%
-  spread(rosa,freq_rosa) %&gt;%
-  arrange(factor(pop_name, levels=paper_pops)) %&gt;%
-  dplyr::select(pop_name,contains(&quot;EE&quot;),contains(&quot;HH&quot;),contains(&quot;LL&quot;),n_pop) %&gt;%
-  rename(Collection = pop_name,
-         EE = EEEEEEEE,
-         EL = HHHHHHHH,
-         LL = LLLLLLLL,
-         n = n_pop) %&gt;%
-  mutate(Ecotype = str_extract(Collection,&quot;([spring]{6}|[fall]{4}|[unknown]{7}|[winter]{6}|[late]{4}[-]{1}[fall]{4})&quot;),
-         Ecotype = gsub(&quot;unknown&quot;,&quot;mix&quot;,Ecotype),
-         Ecotype = gsub(&quot;spring&quot;,&quot;spring-run&quot;,Ecotype),
-         Ecotype = gsub(&quot;fall&quot;,&quot;fall-run&quot;,Ecotype),
-         Ecotype = gsub(&quot;winter&quot;,&quot;winter-run&quot;,Ecotype),
-         Ecotype = gsub(&quot;late-fall&quot;,&quot;late fall-run&quot;,Ecotype),
-         Ecotype = ifelse(Ecotype==&quot;late fall-run-run&quot;, &quot;late fall-run&quot;,Ecotype)) %&gt;%
-  dplyr::select(Collection,Ecotype, everything()) %&gt;%
-  replace_na(list(Ecotype=&quot;mix&quot;)) %&gt;%
+  dplyr::select(pop_name, n_pop, rosa, freq_rosa) %&gt;%
+  distinct(pop_name, rosa, .keep_all = TRUE) %&gt;%
+  spread(rosa, freq_rosa) %&gt;%
+  arrange(factor(pop_name, levels = paper_pops)) %&gt;%
+  dplyr::select(pop_name, contains(&quot;EE&quot;), contains(&quot;HH&quot;), contains(&quot;LL&quot;), n_pop) %&gt;%
+  rename(
+    Collection = pop_name,
+    EE = EEEEEEEE,
+    EL = HHHHHHHH,
+    LL = LLLLLLLL,
+    n = n_pop
+  ) %&gt;%
+  mutate(
+    Ecotype = str_extract(Collection, &quot;([spring]{6}|[fall]{4}|[unknown]{7}|[winter]{6}|[late]{4}[-]{1}[fall]{4})&quot;),
+    Ecotype = gsub(&quot;unknown&quot;, &quot;mix&quot;, Ecotype),
+    Ecotype = gsub(&quot;spring&quot;, &quot;spring-run&quot;, Ecotype),
+    Ecotype = gsub(&quot;fall&quot;, &quot;fall-run&quot;, Ecotype),
+    Ecotype = gsub(&quot;winter&quot;, &quot;winter-run&quot;, Ecotype),
+    Ecotype = gsub(&quot;late-fall&quot;, &quot;late fall-run&quot;, Ecotype),
+    Ecotype = ifelse(Ecotype == &quot;late fall-run-run&quot;, &quot;late fall-run&quot;, Ecotype)
+  ) %&gt;%
+  dplyr::select(Collection, Ecotype, everything()) %&gt;%
+  replace_na(list(Ecotype = &quot;mix&quot;)) %&gt;%
   mutate(Collection = recode(
-    Collection, 
+    Collection,
     `Coleman hatchery late-fall` = &quot;Battle Creek late-fall&quot;,
     `Iron Gate hatchery fall` = &quot;Klamath River fall&quot;
-    ))
+  ))
 
 
-freq_table %&gt;% 
-  replace_na(list(EE=&quot;&quot;, EL=&quot;&quot;, LL=&quot;&quot;))</code></pre>
+freq_table %&gt;%
+  replace_na(list(EE = &quot;&quot;, EL = &quot;&quot;, LL = &quot;&quot;))</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["Collection"],"name":[1],"type":["chr"],"align":["left"]},{"label":["Ecotype"],"name":[2],"type":["chr"],"align":["left"]},{"label":["EE"],"name":[3],"type":["chr"],"align":["left"]},{"label":["EL"],"name":[4],"type":["chr"],"align":["left"]},{"label":["LL"],"name":[5],"type":["chr"],"align":["left"]},{"label":["n"],"name":[6],"type":["int"],"align":["right"]}],"data":[{"1":"Siletz River spring","2":"spring-run","3":"0.674","4":"0.292","5":"0.034","6":"89"},{"1":"Siletz River fall","2":"fall-run","3":"","4":"0.015","5":"0.985","6":"65"},{"1":"Klamath River fall","2":"fall-run","3":"","4":"","5":"1","6":"471"},{"1":"Salmon River spring","2":"spring-run","3":"0.833","4":"0.125","5":"0.042","6":"24"},{"1":"Salmon River fall","2":"fall-run","3":"0.077","4":"0.385","5":"0.538","6":"13"},{"1":"Salmon River unknown","2":"mix","3":"0.122","4":"0.299","5":"0.579","6":"254"},{"1":"Trinity River hatchery spring","2":"spring-run","3":"0.596","4":"0.34","5":"0.064","6":"94"},{"1":"Trinity River hatchery fall","2":"fall-run","3":"","4":"0.021","5":"0.979","6":"94"},{"1":"Trinity River unknown","2":"mix","3":"0.262","4":"0.231","5":"0.506","6":"160"},{"1":"Eel River fall","2":"fall-run","3":"","4":"","5":"1","6":"45"},{"1":"Russian River fall","2":"fall-run","3":"","4":"","5":"1","6":"46"},{"1":"Sacramento River winter","2":"winter-run","3":"0.96","4":"0.04","5":"","6":"278"},{"1":"Battle Creek late-fall","2":"late fall-run","3":"","4":"","5":"1","6":"44"},{"1":"Butte Creek spring","2":"spring-run","3":"1","4":"","5":"","6":"79"},{"1":"Butte Creek fall","2":"fall-run","3":"","4":"0.217","5":"0.783","6":"23"},{"1":"Butte Creek unknown","2":"mix","3":"0.796","4":"0.032","5":"0.172","6":"93"},{"1":"Mill-Deer Creek","2":"mix","3":"0.349","4":"0.167","5":"0.483","6":"269"},{"1":"Feather River hatchery spring","2":"spring-run","3":"1","4":"","5":"","6":"47"},{"1":"Feather River hatchery fall","2":"fall-run","3":"0.205","4":"0.337","5":"0.458","6":"83"},{"1":"Feather River unknown","2":"mix","3":"0.109","4":"0.158","5":"0.733","6":"285"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
-<pre class="r"><code>##write out frequency table
-freq_table %&gt;% 
+<pre class="r"><code>## write out frequency table
+freq_table %&gt;%
   replace_na(list(EE = &quot;0.000&quot;, EL = &quot;0.000&quot;, LL = &quot;0.000&quot;)) %&gt;%
   write_csv(&quot;outputs/107/RoSA_frequencies_tableS7.csv&quot;)</code></pre>
 </div>
@@ -392,34 +399,38 @@ freq_table %&gt;%
 <h1>Frequency table including the within-RoSA recombinants</h1>
 <p>Create a table of all RoSA genotypes including recombinants.</p>
 <pre class="r"><code>rosa_hap_order &lt;- rosa_nodups %&gt;%
-  filter(!str_detect(rosa,&quot;\\?&quot;)) %&gt;%
+  filter(!str_detect(rosa, &quot;\\?&quot;)) %&gt;%
   distinct(rosa) %&gt;%
-  mutate(n_e = str_count(rosa,&quot;E&quot;),
-         n_h = str_count(rosa,&quot;H&quot;),
-         n_l = str_count(rosa,&quot;L&quot;))%&gt;%
+  mutate(
+    n_e = str_count(rosa, &quot;E&quot;),
+    n_h = str_count(rosa, &quot;H&quot;),
+    n_l = str_count(rosa, &quot;L&quot;)
+  ) %&gt;%
   arrange(desc(n_e), desc(n_h), desc(n_l)) %&gt;%
   pull(rosa)
 
 count_table &lt;- rosa_nodups %&gt;%
-  filter(!str_detect(rosa,&quot;\\?&quot;)) %&gt;%
- mutate(rosa_f = factor(rosa, levels = rosa_hap_order)) %&gt;% 
+  filter(!str_detect(rosa, &quot;\\?&quot;)) %&gt;%
+  mutate(rosa_f = factor(rosa, levels = rosa_hap_order)) %&gt;%
   group_by(pop_name) %&gt;%
   mutate(n_pop = n()) %&gt;%
-  group_by(pop_name,rosa) %&gt;%
+  group_by(pop_name, rosa) %&gt;%
   mutate(n_rosa = n()) %&gt;%
   ungroup() %&gt;%
-  dplyr::select(pop_name,n_pop,rosa_f,n_rosa) %&gt;%
-  distinct(pop_name,rosa_f, .keep_all=TRUE) %&gt;% 
-  spread(rosa_f,n_rosa) %&gt;%
-  arrange(factor(pop_name, levels=paper_pops)) %&gt;%
-  dplyr::select(pop_name,rosa_hap_order,n_pop) %&gt;%
-  rename(Collection=pop_name,
-         n = n_pop) %&gt;%
+  dplyr::select(pop_name, n_pop, rosa_f, n_rosa) %&gt;%
+  distinct(pop_name, rosa_f, .keep_all = TRUE) %&gt;%
+  spread(rosa_f, n_rosa) %&gt;%
+  arrange(factor(pop_name, levels = paper_pops)) %&gt;%
+  dplyr::select(pop_name, rosa_hap_order, n_pop) %&gt;%
+  rename(
+    Collection = pop_name,
+    n = n_pop
+  ) %&gt;%
   mutate(Collection = recode(
-    Collection, 
+    Collection,
     `Coleman hatchery late-fall` = &quot;Battle Creek late-fall&quot;,
     `Iron Gate hatchery fall` = &quot;Klamath River fall&quot;
-    ))
+  ))
 
 # new versions of tidyr don't allow type conversions for NA replacements, so
 # deal with it this way
@@ -428,7 +439,7 @@ count_table_char &lt;- count_table %&gt;%
 
 count_table_char[is.na(count_table_char)] &lt;- &quot;&quot;
 
-##write out count table here.
+## write out count table here.
 write_csv(count_table_char, &quot;outputs/107/RoSA_counts_all_genotypes_dataS3.csv&quot;)</code></pre>
 </div>
 <div id="session-info" class="section level1">
@@ -444,7 +455,7 @@ write_csv(count_table_char, &quot;outputs/107/RoSA_counts_all_genotypes_dataS3.c
 ##  collate  en_US.UTF-8                 
 ##  ctype    en_US.UTF-8                 
 ##  tz       America/Denver              
-##  date     2020-05-11                  
+##  date     2020-05-14                  
 ## 
 ## ─ Packages ───────────────────────────────────────────────────────────────────
 ##  package     * version date       lib source        
@@ -518,7 +529,7 @@ write_csv(count_table_char, &quot;outputs/107/RoSA_counts_all_genotypes_dataS3.c
 <h1>Running Time</h1>
 <p>Running the code and rendering this notebook required approximately this much time on a Mac laptop of middling speed:</p>
 <pre class="r"><code>Sys.time() - start_time</code></pre>
-<pre><code>## Time difference of 1.606064 secs</code></pre>
+<pre><code>## Time difference of 1.477606 secs</code></pre>
 </div>
 
 

@@ -29,19 +29,20 @@ dir.create("intermediates/201", recursive = TRUE, showWarnings = FALSE)
 # Read in and explore the results computed on the cluster
 
 ```{r}
-depths <- read_tsv("stored_results/201/read-depths-by-base-pair-and-pair-type.tsv.gz") 
+depths <- read_tsv("stored_results/201/read-depths-by-base-pair-and-pair-type.tsv.gz")
 
 d2 <- depths %>%
-  mutate(fall_mispair_ppn = fall.aberrant.bam / fall.2Mb.bam,
-         spring_mispair_ppn = spring.aberrant.bam / spring.2Mb.bam)
-
+  mutate(
+    fall_mispair_ppn = fall.aberrant.bam / fall.2Mb.bam,
+    spring_mispair_ppn = spring.aberrant.bam / spring.2Mb.bam
+  )
 ```
 
 Now, plot those alongside one another.
 ```{r}
 quick_lines <- function(d2) {
   ggplot() +
-    geom_line(data = d2 %>% filter(!is.na(spring_mispair_ppn)), mapping = aes(x = POS, y = spring_mispair_ppn), colour = "gold") + 
+    geom_line(data = d2 %>% filter(!is.na(spring_mispair_ppn)), mapping = aes(x = POS, y = spring_mispair_ppn), colour = "gold") +
     geom_line(data = d2 %>% filter(!is.na(fall_mispair_ppn)), mapping = aes(x = POS, y = -fall_mispair_ppn), colour = "blue")
 }
 
@@ -61,9 +62,8 @@ between then two is at least D:
 filt_rd <- function(data, X, P, D) {
   data %>%
     filter((fall.2Mb.bam > X | spring.2Mb.bam > X) &
-             (spring_mispair_ppn > P | fall_mispair_ppn > P) & 
-             (abs(spring_mispair_ppn - fall_mispair_ppn) > D)
-    )
+      (spring_mispair_ppn > P | fall_mispair_ppn > P) &
+      (abs(spring_mispair_ppn - fall_mispair_ppn) > D))
 }
 ```
 
@@ -73,7 +73,6 @@ filt1 <- filt_rd(d2, 35, 0.8, 0.5)
 
 # that suggests a single interesting region:
 filt1 %>% select(POS, starts_with("fall"), starts_with("spring"))
-
 ```
 
 That is one spot where the falls have plenty of reads aligning, but the springs have very few
@@ -87,16 +86,18 @@ on the $E$-lineage haplotype---it isn't an indication of an inversion of any sor
 
 ```{r}
 dsplit <- depths %>%
-  mutate(fall_split_ppn = fall.split_reads.bam / fall.2Mb.bam,
-         spring_split_ppn = spring.split_reads.bam / spring.2Mb.bam)
+  mutate(
+    fall_split_ppn = fall.split_reads.bam / fall.2Mb.bam,
+    spring_split_ppn = spring.split_reads.bam / spring.2Mb.bam
+  )
 ```
 
 
 And plot those all along the 2 Mb:
 ```{r}
 split_ppn <- ggplot() +
-    geom_line(data = dsplit %>% filter(!is.na(spring_split_ppn)), mapping = aes(x = POS, y = spring_split_ppn), colour = "gold") + 
-    geom_line(data = dsplit %>% filter(!is.na(fall_split_ppn)), mapping = aes(x = POS, y = -fall_split_ppn), colour = "blue")
+  geom_line(data = dsplit %>% filter(!is.na(spring_split_ppn)), mapping = aes(x = POS, y = spring_split_ppn), colour = "gold") +
+  geom_line(data = dsplit %>% filter(!is.na(fall_split_ppn)), mapping = aes(x = POS, y = -fall_split_ppn), colour = "blue")
 
 ggsave(split_ppn, filename = "outputs/201/split_read_ppn_spring_v_fall.png", width = 15, height = 7)
 
@@ -109,9 +110,8 @@ and see if we find any that are really different between falls and springs.
 filt_for_splits <- function(data, X, P, D) {
   data %>%
     filter((fall.2Mb.bam > X | spring.2Mb.bam > X) &
-             (spring_split_ppn > P | fall_split_ppn > P) & 
-             (abs(spring_split_ppn - fall_split_ppn) > D)
-    )
+      (spring_split_ppn > P | fall_split_ppn > P) &
+      (abs(spring_split_ppn - fall_split_ppn) > D))
 }
 
 

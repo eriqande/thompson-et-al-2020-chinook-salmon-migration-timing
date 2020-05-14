@@ -257,7 +257,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">108-Ocean-early-haplotype-abundance-model-tableS10</h1>
 <h4 class="author">Neil Thompson</h4>
-<h4 class="date">Last Updated: 2020-05-11</h4>
+<h4 class="date">Last Updated: 2020-05-14</h4>
 
 </div>
 
@@ -277,14 +277,16 @@ library(lubridate)</code></pre>
 <p>Values for 1 and 2 are taken from Hankin and Logan (2010) A PRELIMINARY ANALYSIS OF CHINOOK SALMON CODED-WIRE TAG RECOVERY DATA FROM IRON GATE, TRINITY RIVER AND COLE RIVERS HATCHERIES, BROOD YEARS 1978-2004.</p>
 <p>Table 4.13 has the age-structure of escapement at Trinity River hatchery for fingerling and yearling releases.</p>
 <p>Maturation probabilites are in Table 4.8.</p>
-<pre class="r"><code>t48_falldata &lt;- tibble(age = rep(c(2,3,4),4), ecotype = rep(&quot;fall&quot;,12), pop=rep(rep(c(&quot;IGH&quot;,&quot;TRH&quot;),each=3),2), rel_type = rep(c(&quot;fingerling&quot;,&quot;yearling&quot;), each=6), mat_value = c(0.0315,.4808,.9327,.1029,.6447,.9362,.0087,.2385,.9348,.0363,.5629,.9407))
+<pre class="r"><code>t48_falldata &lt;- tibble(age = rep(c(2, 3, 4), 4), ecotype = rep(&quot;fall&quot;, 12), pop = rep(rep(c(&quot;IGH&quot;, &quot;TRH&quot;), each = 3), 2), rel_type = rep(c(&quot;fingerling&quot;, &quot;yearling&quot;), each = 6), mat_value = c(0.0315, .4808, .9327, .1029, .6447, .9362, .0087, .2385, .9348, .0363, .5629, .9407))
 
-t48_springdata &lt;- tibble(age = rep(c(2,3,4),2), ecotype = rep(&quot;spring&quot;,6), pop=rep(c(&quot;TRH&quot;),6), rel_type = rep(c(&quot;fingerling&quot;,&quot;yearling&quot;), each=3), mat_value = c(0.0409,.5577,.9365,.0199,.3526,.9031))
+t48_springdata &lt;- tibble(age = rep(c(2, 3, 4), 2), ecotype = rep(&quot;spring&quot;, 6), pop = rep(c(&quot;TRH&quot;), 6), rel_type = rep(c(&quot;fingerling&quot;, &quot;yearling&quot;), each = 3), mat_value = c(0.0409, .5577, .9365, .0199, .3526, .9031))
 
-t148_data &lt;- bind_rows(t48_falldata,t48_springdata)
+t148_data &lt;- bind_rows(t48_falldata, t48_springdata)
 
-t148_data %&gt;% group_by(age,pop,ecotype) %&gt;%
-  summarise(mat_mean = mean(mat_value)) %&gt;% arrange(pop, ecotype) %&gt;%
+t148_data %&gt;%
+  group_by(age, pop, ecotype) %&gt;%
+  summarise(mat_mean = mean(mat_value)) %&gt;%
+  arrange(pop, ecotype) %&gt;%
   group_by(age) %&gt;%
   summarise(mat_mean_overall = mean(mat_mean))</code></pre>
 <div data-pagedtable="false">
@@ -293,31 +295,33 @@ t148_data %&gt;% group_by(age,pop,ecotype) %&gt;%
   </script>
 </div>
 <p>age-structure of TRH returns, data from table 4.13 in Hankin 2010</p>
-<pre class="r"><code>age_structure &lt;- tibble(age = rep(c(3,4,5),2), rel_type = rep(c(&quot;fingerling&quot;,&quot;yearling&quot;),each=3), n_escape = c(7401,2691,93,19133,9465,140)) %&gt;% 
-  group_by(rel_type) %&gt;% 
-  mutate(n_tot = sum(n_escape),
-         pct_age = round(n_escape/n_tot,2)) %&gt;%
+<pre class="r"><code>age_structure &lt;- tibble(age = rep(c(3, 4, 5), 2), rel_type = rep(c(&quot;fingerling&quot;, &quot;yearling&quot;), each = 3), n_escape = c(7401, 2691, 93, 19133, 9465, 140)) %&gt;%
+  group_by(rel_type) %&gt;%
+  mutate(
+    n_tot = sum(n_escape),
+    pct_age = round(n_escape / n_tot, 2)
+  ) %&gt;%
   group_by(age) %&gt;%
   summarise(mean_pct_age = mean(pct_age))</code></pre>
 <p>Definitions; [FW = freshwater, yo = years old]</p>
 <p>P3 = proportion of 3 yo in FW P4 = proportion of 4 year olds in FW M3 = maturation rate for 3 yo M4 = maturation rate for 4 yo S3 = saltwater proportion of 3yo S4 = saltwater proportion of 4yo</p>
 <p>S3M3 = unscaled proportion of 3 yo in FW S4M4 = unscaled proportion of 4 yo in FW</p>
 <p>S3M3/(S3M3+S4M4) = P3 therefore S3M3 is proportional to P3 and S4M4 would be proportional to P4. Rearrange the proportionality and we get P3/M3 is proportional to S3, P4/M4 is proportional to S4</p>
-<pre class="r"><code>P3 = 0.7
-M3 = 0.47
-P4 = 0.3
-M4 = 0.93
+<pre class="r"><code>P3 &lt;- 0.7
+M3 &lt;- 0.47
+P4 &lt;- 0.3
+M4 &lt;- 0.93
 
-S3_unnorm = P3/M3
-S4_unnorm = P4/M4
+S3_unnorm &lt;- P3 / M3
+S4_unnorm &lt;- P4 / M4
 
-S3_norm = round(S3_unnorm/sum(S3_unnorm,S4_unnorm),3) # rounded to 3 digits to keep things clean
-S4_norm = round(S4_unnorm/sum(S3_unnorm,S4_unnorm),3)</code></pre>
+S3_norm &lt;- round(S3_unnorm / sum(S3_unnorm, S4_unnorm), 3) # rounded to 3 digits to keep things clean
+S4_norm &lt;- round(S4_unnorm / sum(S3_unnorm, S4_unnorm), 3)</code></pre>
 <p>Now calculate the probability that either a 3 yo or 4 yo will enter freshwater this year.</p>
-<pre class="r"><code>p_migrate_3yo = S3_norm*M3
-p_migrate_4yo = S4_norm*M4
+<pre class="r"><code>p_migrate_3yo &lt;- S3_norm * M3
+p_migrate_4yo &lt;- S4_norm * M4
 
-p_migrate = sum(p_migrate_3yo,p_migrate_4yo)</code></pre>
+p_migrate &lt;- sum(p_migrate_3yo, p_migrate_4yo)</code></pre>
 <p>p_migrate = 0.55188 Expand the observed counts by the proportion of genotype EE/EL/LL that has escaped to FW.</p>
 <p>Let: q = fraction of fish with genotype EE/EL/LL that have escaped to freshwater by month 0.45 = 1-p_migrate</p>
 <p>That leads to Ngeno = ngeno/(1-0.45q)</p>
@@ -326,20 +330,26 @@ p_migrate = sum(p_migrate_3yo,p_migrate_4yo)</code></pre>
 
 estuary_meta &lt;- read_csv(&quot;./data/102-Klamath-entryDATA_withNMFSID.csv&quot;)</code></pre>
 <pre><code>## Warning: Missing column names filled in: 'X16' [16]</code></pre>
-<pre class="r"><code>estuary_data &lt;- left_join(estuary_meta, rosa_data, by=c(&quot;NMFS ID&quot; = &quot;NMFS_DNA_ID&quot;)) %&gt;%
+<pre class="r"><code>estuary_data &lt;- left_join(estuary_meta, rosa_data, by = c(&quot;NMFS ID&quot; = &quot;NMFS_DNA_ID&quot;)) %&gt;%
   dplyr::select(-ID) %&gt;%
-  rename(NMFS_DNA_ID = 'NMFS ID') %&gt;%
+  rename(NMFS_DNA_ID = &quot;NMFS ID&quot;) %&gt;%
   dplyr::select(NMFS_DNA_ID, rosa, everything())
 
-q_df &lt;- estuary_data %&gt;% 
-  filter(!str_detect(rosa,&quot;\\?&quot;)) %&gt;%
+q_df &lt;- estuary_data %&gt;%
+  filter(!str_detect(rosa, &quot;\\?&quot;)) %&gt;%
   filter(year == 2010) %&gt;% # using 2010 only because there were very few heterozygotes in 2009.
-  mutate(month = str_sub(month,1,3),
-         month = factor(month, levels=c(&quot;May&quot;,&quot;Jun&quot;,&quot;Jul&quot;,&quot;Aug&quot;,&quot;Sep&quot;,&quot;Oct&quot;))) %&gt;%
-  count(rosa,month) %&gt;% group_by(rosa) %&gt;% mutate(n_geno = sum(n), 
-                                                    q = cumsum(round(n/n_geno,3)),
-                                                    denom = 1-(q*.45),
-                                                    tmp = paste0(rosa,&quot;_&quot;,month))
+  mutate(
+    month = str_sub(month, 1, 3),
+    month = factor(month, levels = c(&quot;May&quot;, &quot;Jun&quot;, &quot;Jul&quot;, &quot;Aug&quot;, &quot;Sep&quot;, &quot;Oct&quot;))
+  ) %&gt;%
+  count(rosa, month) %&gt;%
+  group_by(rosa) %&gt;%
+  mutate(
+    n_geno = sum(n),
+    q = cumsum(round(n / n_geno, 3)),
+    denom = 1 - (q * .45),
+    tmp = paste0(rosa, &quot;_&quot;, month)
+  )
 
 q_df</code></pre>
 <div data-pagedtable="false">
@@ -353,19 +363,30 @@ q_df</code></pre>
 </div>
 <div id="ocean-analysis" class="section level2">
 <h2>2010 ocean analysis</h2>
-<pre class="r"><code>ocean_2010 &lt;- ocean_data %&gt;% 
-  mutate(cMonth = month(COLLECTION_DATE,label = TRUE)) %&gt;%  
-  filter(cYear==2010) %&gt;%
-  count(rosa,cMonth) %&gt;% mutate(tmp = paste0(rosa,&quot;_&quot;,cMonth))
+<pre class="r"><code>ocean_2010 &lt;- ocean_data %&gt;%
+  mutate(cMonth = month(COLLECTION_DATE, label = TRUE)) %&gt;%
+  filter(cYear == 2010) %&gt;%
+  count(rosa, cMonth) %&gt;%
+  mutate(tmp = paste0(rosa, &quot;_&quot;, cMonth))
 
-counts2expand &lt;- q_df %&gt;% select(tmp,denom) %&gt;%
-  left_join(ocean_2010,.,&quot;tmp&quot;) %&gt;%
-  mutate(denom = ifelse(rosa.x==&quot;LLLLLLLL&quot;&amp;cMonth%in%c(&quot;May&quot;,&quot;Jun&quot;),1.0,denom)) %&gt;%
-  replace_na(list(denom=0.55)) %&gt;% select(-rosa.y) %&gt;% ungroup() %&gt;% rename(rosa=rosa.x)
+counts2expand &lt;- q_df %&gt;%
+  select(tmp, denom) %&gt;%
+  left_join(ocean_2010, ., &quot;tmp&quot;) %&gt;%
+  mutate(denom = ifelse(rosa.x == &quot;LLLLLLLL&quot; &amp; cMonth %in% c(&quot;May&quot;, &quot;Jun&quot;), 1.0, denom)) %&gt;%
+  replace_na(list(denom = 0.55)) %&gt;%
+  select(-rosa.y) %&gt;%
+  ungroup() %&gt;%
+  rename(rosa = rosa.x)
 
-counts2010e &lt;- counts2expand %&gt;% group_by(rosa) %&gt;% mutate(Ngeno = n/lag(denom,1),
-                         Ngeno = ifelse(is.na(Ngeno),n,Ngeno)) %&gt;% group_by(rosa) %&gt;%
-  mutate(sumNgeno = sum(Ngeno)) %&gt;% ungroup() %&gt;%
+counts2010e &lt;- counts2expand %&gt;%
+  group_by(rosa) %&gt;%
+  mutate(
+    Ngeno = n / lag(denom, 1),
+    Ngeno = ifelse(is.na(Ngeno), n, Ngeno)
+  ) %&gt;%
+  group_by(rosa) %&gt;%
+  mutate(sumNgeno = sum(Ngeno)) %&gt;%
+  ungroup() %&gt;%
   mutate(sumNfish = sum(unique(sumNgeno)))
 
 counts2010e</code></pre>
@@ -381,11 +402,13 @@ counts2010e</code></pre>
 <p>For EL cMonth 5 there is no expansion because we assume no fish have left saltwater. Same for EE, no expansion for cMonth 5.</p>
 <p>Frequency of the E and L haplotypes after accounting for maturation probability and fish that escape to freshwater in 2010:</p>
 <pre class="r"><code>counts2010e %&gt;%
-  group_by(rosa) %&gt;% 
+  group_by(rosa) %&gt;%
   slice(1) %&gt;%
   ungroup() %&gt;%
-  summarise(E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
-            L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2))</code></pre>
+  summarise(
+    E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
+    L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2)
+  )</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["E_freq"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["L_freq"],"name":[2],"type":["dbl"],"align":["right"]}],"data":[{"1":"0.1400414","2":"0.8599586"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
@@ -395,19 +418,30 @@ counts2010e</code></pre>
 <div id="ocean-analysis-1" class="section level2">
 <h2>2011 ocean analysis</h2>
 <p>Note limited sample size (n=72) and fishery duration for 2011 (samples only from july and august)</p>
-<pre class="r"><code>ocean_2011 &lt;- ocean_data %&gt;% 
-  mutate(cMonth = month(COLLECTION_DATE,label = TRUE)) %&gt;%  
-  filter(cYear==2011) %&gt;%
-  count(rosa,cMonth) %&gt;% mutate(tmp = paste0(rosa,&quot;_&quot;,cMonth))
+<pre class="r"><code>ocean_2011 &lt;- ocean_data %&gt;%
+  mutate(cMonth = month(COLLECTION_DATE, label = TRUE)) %&gt;%
+  filter(cYear == 2011) %&gt;%
+  count(rosa, cMonth) %&gt;%
+  mutate(tmp = paste0(rosa, &quot;_&quot;, cMonth))
 
-counts2expand_2011 &lt;- q_df %&gt;% select(tmp,denom) %&gt;%
-  left_join(.,ocean_2011,&quot;tmp&quot;) %&gt;%
-  mutate(denom = ifelse(rosa.x==&quot;LLLLLLLL&quot;&amp;cMonth%in%c(&quot;May&quot;,&quot;Jun&quot;),1.0,denom)) %&gt;%
-  replace_na(list(denom=0.55)) %&gt;% select(-rosa.y) %&gt;% ungroup() %&gt;% rename(rosa=rosa.x)
+counts2expand_2011 &lt;- q_df %&gt;%
+  select(tmp, denom) %&gt;%
+  left_join(., ocean_2011, &quot;tmp&quot;) %&gt;%
+  mutate(denom = ifelse(rosa.x == &quot;LLLLLLLL&quot; &amp; cMonth %in% c(&quot;May&quot;, &quot;Jun&quot;), 1.0, denom)) %&gt;%
+  replace_na(list(denom = 0.55)) %&gt;%
+  select(-rosa.y) %&gt;%
+  ungroup() %&gt;%
+  rename(rosa = rosa.x)
 
-counts2011e &lt;- counts2expand_2011 %&gt;% group_by(rosa) %&gt;% mutate(Ngeno = n/lag(denom,1),
-                         Ngeno = ifelse(is.na(Ngeno),n,Ngeno)) %&gt;% filter(!is.na(Ngeno)) %&gt;%
-  mutate(sumNgeno = sum(Ngeno)) %&gt;% ungroup() %&gt;%
+counts2011e &lt;- counts2expand_2011 %&gt;%
+  group_by(rosa) %&gt;%
+  mutate(
+    Ngeno = n / lag(denom, 1),
+    Ngeno = ifelse(is.na(Ngeno), n, Ngeno)
+  ) %&gt;%
+  filter(!is.na(Ngeno)) %&gt;%
+  mutate(sumNgeno = sum(Ngeno)) %&gt;%
+  ungroup() %&gt;%
   mutate(sumNfish = sum(unique(sumNgeno)))
 
 counts2011e</code></pre>
@@ -418,11 +452,13 @@ counts2011e</code></pre>
 </div>
 <p>Frequency of the E and L haplotypes after accounting for maturation probability and fish that escape to freshwater in 2011</p>
 <pre class="r"><code>counts2011e %&gt;%
-  group_by(rosa) %&gt;% 
+  group_by(rosa) %&gt;%
   slice(1) %&gt;%
   ungroup() %&gt;%
-  summarise(E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
-            L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2))</code></pre>
+  summarise(
+    E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
+    L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2)
+  )</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["E_freq"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["L_freq"],"name":[2],"type":["dbl"],"align":["right"]}],"data":[{"1":"0.1329626","2":"0.8670374"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
@@ -431,19 +467,30 @@ counts2011e</code></pre>
 </div>
 <div id="ocean-analysis-2" class="section level2">
 <h2>2012 ocean analysis</h2>
-<pre class="r"><code>ocean_2012 &lt;- ocean_data %&gt;% 
-  mutate(cMonth = month(COLLECTION_DATE,label = TRUE)) %&gt;%  
-  filter(cYear==2012) %&gt;%
-  count(rosa,cMonth) %&gt;% mutate(tmp = paste0(rosa,&quot;_&quot;,cMonth))
+<pre class="r"><code>ocean_2012 &lt;- ocean_data %&gt;%
+  mutate(cMonth = month(COLLECTION_DATE, label = TRUE)) %&gt;%
+  filter(cYear == 2012) %&gt;%
+  count(rosa, cMonth) %&gt;%
+  mutate(tmp = paste0(rosa, &quot;_&quot;, cMonth))
 
-counts2expand_2012&lt;- q_df %&gt;% select(tmp,denom) %&gt;%
-  left_join(ocean_2012,.,&quot;tmp&quot;) %&gt;%
-mutate(denom = ifelse(rosa.x==&quot;LLLLLLLL&quot;&amp;cMonth%in%c(&quot;May&quot;,&quot;Jun&quot;),1.0,denom)) %&gt;%
-  replace_na(list(denom=0.55)) %&gt;% select(-rosa.y) %&gt;% ungroup() %&gt;% rename(rosa=rosa.x)
+counts2expand_2012 &lt;- q_df %&gt;%
+  select(tmp, denom) %&gt;%
+  left_join(ocean_2012, ., &quot;tmp&quot;) %&gt;%
+  mutate(denom = ifelse(rosa.x == &quot;LLLLLLLL&quot; &amp; cMonth %in% c(&quot;May&quot;, &quot;Jun&quot;), 1.0, denom)) %&gt;%
+  replace_na(list(denom = 0.55)) %&gt;%
+  select(-rosa.y) %&gt;%
+  ungroup() %&gt;%
+  rename(rosa = rosa.x)
 
-counts2012e &lt;- counts2expand_2012 %&gt;% group_by(rosa) %&gt;% mutate(Ngeno = n/lag(denom,1),
-                         Ngeno = ifelse(is.na(Ngeno),n,Ngeno)) %&gt;% group_by(rosa) %&gt;%
-  mutate(sumNgeno = sum(Ngeno)) %&gt;% ungroup() %&gt;%
+counts2012e &lt;- counts2expand_2012 %&gt;%
+  group_by(rosa) %&gt;%
+  mutate(
+    Ngeno = n / lag(denom, 1),
+    Ngeno = ifelse(is.na(Ngeno), n, Ngeno)
+  ) %&gt;%
+  group_by(rosa) %&gt;%
+  mutate(sumNgeno = sum(Ngeno)) %&gt;%
+  ungroup() %&gt;%
   mutate(sumNfish = sum(unique(sumNgeno)))
 
 counts2012e</code></pre>
@@ -454,11 +501,13 @@ counts2012e</code></pre>
 </div>
 <p>Frequency of the E and L haplotype after accounting for maturation probability and fish that escape to freshwater in 2012</p>
 <pre class="r"><code>counts2012e %&gt;%
-  group_by(rosa) %&gt;% 
+  group_by(rosa) %&gt;%
   slice(1) %&gt;%
   ungroup() %&gt;%
-  summarise(E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
-            L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2))</code></pre>
+  summarise(
+    E_freq = sum(sumNgeno * c(2, 1, 0)) / (sumNfish[1] * 2),
+    L_freq = sum(sumNgeno * c(0, 1, 2)) / (sumNfish[1] * 2)
+  )</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["E_freq"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["L_freq"],"name":[2],"type":["dbl"],"align":["right"]}],"data":[{"1":"0.1023198","2":"0.8976802"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
@@ -469,10 +518,10 @@ counts2012e</code></pre>
 <div id="uncorrected-estimates-of-rosa-haplotype-frequencies-in-ocean" class="section level1">
 <h1>Uncorrected estimates of RoSA haplotype frequencies in ocean</h1>
 <p>First get the oncorrected estimates of the frequencies of the different genotypes</p>
-<pre class="r"><code>uncorr_geno_freqs &lt;- ocean_data %&gt;% 
-  count(cYear,rosa) %&gt;%
+<pre class="r"><code>uncorr_geno_freqs &lt;- ocean_data %&gt;%
+  count(cYear, rosa) %&gt;%
   group_by(cYear) %&gt;%
-  mutate(freq = n/sum(n))
+  mutate(freq = n / sum(n))
 
 uncorr_geno_freqs</code></pre>
 <div data-pagedtable="false">
@@ -482,16 +531,17 @@ uncorr_geno_freqs</code></pre>
 </div>
 <p>Then add up the allele freqs from the genotypes. <span class="math">\(\times 1\)</span> for each EE and <span class="math">\(\times 1/2\)</span> for each heterozygote:</p>
 <pre class="r"><code>alle_freqs &lt;- uncorr_geno_freqs %&gt;%
-  mutate(E_alle_freq = case_when(
-    rosa == &quot;EEEEEEEE&quot; ~ freq,
-    rosa == &quot;HHHHHHHH&quot; ~ freq * 0.5,
-    TRUE ~ 0.0
-  ),
-  L_alle_freq = case_when(
-    rosa == &quot;LLLLLLLL&quot; ~ freq,
-    rosa == &quot;HHHHHHHH&quot; ~ freq * 0.5,
-    TRUE ~ 0.0
-  )
+  mutate(
+    E_alle_freq = case_when(
+      rosa == &quot;EEEEEEEE&quot; ~ freq,
+      rosa == &quot;HHHHHHHH&quot; ~ freq * 0.5,
+      TRUE ~ 0.0
+    ),
+    L_alle_freq = case_when(
+      rosa == &quot;LLLLLLLL&quot; ~ freq,
+      rosa == &quot;HHHHHHHH&quot; ~ freq * 0.5,
+      TRUE ~ 0.0
+    )
   )
 alle_freqs</code></pre>
 <div data-pagedtable="false">
@@ -502,8 +552,10 @@ alle_freqs</code></pre>
 <p>And now summarise that by year and format it for easy reading.</p>
 <pre class="r"><code>alle_freqs %&gt;%
   group_by(cYear) %&gt;%
-  summarise(E_haplo_freq = sum(E_alle_freq),
-            L_haplo_freq = sum(L_alle_freq))</code></pre>
+  summarise(
+    E_haplo_freq = sum(E_alle_freq),
+    L_haplo_freq = sum(L_alle_freq)
+  )</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["cYear"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["E_haplo_freq"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["L_haplo_freq"],"name":[3],"type":["dbl"],"align":["right"]}],"data":[{"1":"2010","2":"0.10109890","3":"0.8989011"},{"1":"2011","2":"0.10416667","3":"0.8958333"},{"1":"2012","2":"0.09635417","3":"0.9036458"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
@@ -523,7 +575,7 @@ alle_freqs</code></pre>
 ##  collate  en_US.UTF-8                 
 ##  ctype    en_US.UTF-8                 
 ##  tz       America/Denver              
-##  date     2020-05-11                  
+##  date     2020-05-14                  
 ## 
 ## ─ Packages ───────────────────────────────────────────────────────────────────
 ##  package     * version date       lib source        
@@ -593,7 +645,7 @@ alle_freqs</code></pre>
 <h1>Running Time</h1>
 <p>Running the code and rendering this notebook required approximately this much time on a Mac laptop of middling speed:</p>
 <pre class="r"><code>Sys.time() - start_time</code></pre>
-<pre><code>## Time difference of 1.583543 secs</code></pre>
+<pre><code>## Time difference of 1.529885 secs</code></pre>
 </div>
 
 

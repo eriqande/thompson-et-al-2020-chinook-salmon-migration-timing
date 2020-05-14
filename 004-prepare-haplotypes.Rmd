@@ -106,7 +106,7 @@ dp_means
 ```
 And now look at that:
 ```{r}
-ggplot(dp_means, aes(x = mean_depth)) + 
+ggplot(dp_means, aes(x = mean_depth)) +
   geom_histogram(binwidth = 0.1)
 ```
 
@@ -175,24 +175,25 @@ them in rds format for future use, along with the read-depth information.
 Read in the haplotype data:
 ```{r}
 V <- "intermediates/004/greb1l-imp-phased-with-anc.vcf"
-haps <- ecaRbioinf::vcf_haplos2tidy(V, Anc = "Coho") 
+haps <- ecaRbioinf::vcf_haplos2tidy(V, Anc = "Coho")
 
 # if we kept sites that don't have an ancestral allele from Coho, mark those as NA so the derived allelic states will be NA too.
 haps$fix <- haps$fix %>%
-  mutate(AA = ifelse(AA == "N", NA, AA))  
+  mutate(AA = ifelse(AA == "N", NA, AA))
 ```
 
 First, straighten out the haplotype names, etc.
 ```{r}
 big_haps <- haps$tidy %>%
   filter(Indiv != "Coho") %>%
-  left_join(haps$avd, by = c("ChromKey", "POS", "Indiv", "haplo")) %>% 
+  left_join(haps$avd, by = c("ChromKey", "POS", "Indiv", "haplo")) %>%
   mutate(haplo_name = paste0(Indiv, "-", haplo)) %>%
-  left_join(rfi_depths, by = c("POS", "Indiv"))  %>% # add the read depth information in there
-  mutate(pop = str_replace_all(Indiv, "(_Spring|_Late_Fall|_Fall|_Winter).*$", ""),  # add useful columns of meta data
-         ecotype = str_match(Indiv, "(Spring|Late_Fall|Fall|Winter)")[, 1],
-         lineage = ifelse(pop %in% c("Salmon_River", "Trinity_River_Hatchery"), "Klamath", "Sacto")
-         )
+  left_join(rfi_depths, by = c("POS", "Indiv")) %>% # add the read depth information in there
+  mutate(
+    pop = str_replace_all(Indiv, "(_Spring|_Late_Fall|_Fall|_Winter).*$", ""), # add useful columns of meta data
+    ecotype = str_match(Indiv, "(Spring|Late_Fall|Fall|Winter)")[, 1],
+    lineage = ifelse(pop %in% c("Salmon_River", "Trinity_River_Hatchery"), "Klamath", "Sacto")
+  )
 ```
 
 
@@ -210,7 +211,6 @@ spring_ones <- big_haps %>%
 big_haps <- big_haps %>%
   left_join(spring_ones, by = "POS") %>%
   mutate(alle2 = ifelse(allele == spring_allele, "S", "F"))
-
 ```
 
 And now we need to Join REF and ALT onto that.
@@ -249,22 +249,22 @@ all_together <- bh2d %>%
 # the interior columbia individual, as if it were part of our data set.
 # We do this by choosing its alleles, and naming it, etc.
 jc_fish <- all_together %>%
-  mutate(Indiv = "Narum_et_al_Chinook_Assembly",
-         haplo = "a",
-         allele = case_when(
-           (!is.na(Narum_ALT) & Narum_ALT == ALT) ~ Narum_ALT,
-           nchar(REF) > 1 & Narum == ALT ~ REF, # REF has no deletion, but neither did Narum.  So Narum is REF here.  A tricky one. 
-           (REF == nar_refmsREF & REF == Narum) ~ Narum,
-           TRUE ~ NA_character_
-         ),
-         haplo_name = "Narum_et_al_Chinook_Assembly-a",
-         pop = "Johnson Ck.",
-         ecotype = "Spring",
-         lineage = "Upper Columbia",
-         alle2 = ifelse(allele == spring_allele, "S", "F")) %>%
+  mutate(
+    Indiv = "Narum_et_al_Chinook_Assembly",
+    haplo = "a",
+    allele = case_when(
+      (!is.na(Narum_ALT) & Narum_ALT == ALT) ~ Narum_ALT,
+      nchar(REF) > 1 & Narum == ALT ~ REF, # REF has no deletion, but neither did Narum.  So Narum is REF here.  A tricky one.
+      (REF == nar_refmsREF & REF == Narum) ~ Narum,
+      TRUE ~ NA_character_
+    ),
+    haplo_name = "Narum_et_al_Chinook_Assembly-a",
+    pop = "Johnson Ck.",
+    ecotype = "Spring",
+    lineage = "Upper Columbia",
+    alle2 = ifelse(allele == spring_allele, "S", "F")
+  ) %>%
   select(-narvar_REF, -Narum_ALT, -nar_refmsREF, -Narum)
-  
-  
 ```
 
 Note that `bind_rows(big_haps2, jc_fish)` will add the Johnson Creek fish into

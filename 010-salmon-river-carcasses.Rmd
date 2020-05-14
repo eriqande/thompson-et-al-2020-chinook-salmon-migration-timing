@@ -40,11 +40,10 @@ dir.create("outputs/010", recursive = TRUE, showWarnings = FALSE)
 ```{r}
 # grab and filter to the KLAMATH, and within that the Salmon River
 salmon_bas <- st_read("geo-spatial/GISlayers_calw221_shp/calw221.shp") %>%
-  filter(str_detect(HUNAME, "KLAMATH")) %>%  # get just Klamath Basin
-  filter(HANAME == "Salmon River") %>%       # narrow it down to just Salmon River
-  st_union() %>%         # Keep just the outer basin boundary (not the trib basins within) 
+  filter(str_detect(HUNAME, "KLAMATH")) %>% # get just Klamath Basin
+  filter(HANAME == "Salmon River") %>% # narrow it down to just Salmon River
+  st_union() %>% # Keep just the outer basin boundary (not the trib basins within)
   st_transform(crs = 4326)
-
 ```
 
 Plot it to make sure it is looking correct:
@@ -59,14 +58,14 @@ Yep.
 
 ```{r}
 salmon_riv <- st_read("geo-spatial/California_Streams/California_Streams.shp") %>%
-   filter((str_detect(Hydrolog_1, "Klamath") & str_detect(Name, "Salmon")) |
-            Hydrolog_2 == 18010210 & str_detect(Name, "Salmon"))
+  filter((str_detect(Hydrolog_1, "Klamath") & str_detect(Name, "Salmon")) |
+    Hydrolog_2 == 18010210 & str_detect(Name, "Salmon"))
 
 # this gets written out here
 write_rds(salmon_riv, path = "stored_results/010/salmon_riv.rds", compress = "xz")
 
 # if you couldn't get California_Streams, that is OK,  just uncomment the following line:
-#salmon_riv <- read_rds(path = "stored_results/010/salmon_riv.rds")
+# salmon_riv <- read_rds(path = "stored_results/010/salmon_riv.rds")
 
 # plot it to make sure it looks right.
 plot(st_geometry(salmon_riv))
@@ -113,25 +112,26 @@ So, I've set eval=FALSE, and just have it read the result.
 But the code that generates it is all there.
 ```{r, eval=FALSE}
 reach_spec <- read_csv("data/salmon_river_reaches.csv") %>%
-   mutate(reach_lo = units::set_units(reach_lo, mile),
-          reach_hi = units::set_units(reach_hi, mile))
- 
+  mutate(
+    reach_lo = units::set_units(reach_lo, mile),
+    reach_hi = units::set_units(reach_hi, mile)
+  )
+
 # now join those onto the geometries and then chop each part of them
 # out of the respective tribs/rivers
 units::units_options(allow_mixed = TRUE)
 reach_geos <- reach_spec %>%
-   left_join(salmon_riv, by = "Name") %>%
-   mutate(geometry2 = mclapply(1:n(), 
-                               function(i) line_seg_by_distance(geometry[i], reach_lo[[i]], reach_hi[[i]], asSFC = FALSE),
-                               mc.cores = 8
-                               ))
- 
+  left_join(salmon_riv, by = "Name") %>%
+  mutate(geometry2 = mclapply(1:n(),
+    function(i) line_seg_by_distance(geometry[i], reach_lo[[i]], reach_hi[[i]], asSFC = FALSE),
+    mc.cores = 8
+  ))
+
 survey_reaches <- reach_geos %>%
-   mutate(geometry = st_sfc(reach_geos$geometry2, crs = st_crs(reach_geos))) %>%
-   select(-geometry2)
+  mutate(geometry = st_sfc(reach_geos$geometry2, crs = st_crs(reach_geos))) %>%
+  select(-geometry2)
 
 write_rds(survey_reaches, path = "stored_results/010/survey_reaches.rds", compress = "xz")
-
 ```
 ```{r}
 survey_reaches <- read_rds(path = "stored_results/010/survey_reaches.rds")
@@ -188,15 +188,17 @@ We also record whether the carcass was recorded with a REACH where it was found.
 ```{r}
 expando_rosa <- read_rds("data/salmon_river_spatiotemporal_rosa_data.rds") %>%
   mutate(Year = year(COLLECTION_DATE)) %>%
-  mutate(gcomp = str_remove_all(hapstr, "\\?"),
-         gcvec = strsplit(gcomp, ""),
-         called_geno = case_when(
-           nchar(gcomp) >=2 & sapply(gcvec, function(x) all(x == "P")) ~ "S",
-           nchar(gcomp) >=2 & sapply(gcvec, function(x) all(x == "M")) ~ "F",
-           nchar(gcomp) >=2 & sapply(gcvec, function(x) all(x == "H")) ~ "H",
-           nchar(gcomp) >=2 & (map_int(gcvec, n_distinct) >= 2) ~ "A",
-           TRUE ~ "M"
-         )) %>%
+  mutate(
+    gcomp = str_remove_all(hapstr, "\\?"),
+    gcvec = strsplit(gcomp, ""),
+    called_geno = case_when(
+      nchar(gcomp) >= 2 & sapply(gcvec, function(x) all(x == "P")) ~ "S",
+      nchar(gcomp) >= 2 & sapply(gcvec, function(x) all(x == "M")) ~ "F",
+      nchar(gcomp) >= 2 & sapply(gcvec, function(x) all(x == "H")) ~ "H",
+      nchar(gcomp) >= 2 & (map_int(gcvec, n_distinct) >= 2) ~ "A",
+      TRUE ~ "M"
+    )
+  ) %>%
   mutate(RoSA_genotype = recode_factor(called_geno,
     "S" = "EE",
     "H" = "EL",
@@ -204,22 +206,23 @@ expando_rosa <- read_rds("data/salmon_river_spatiotemporal_rosa_data.rds") %>%
     "A" = "Ambiguous",
     "M" = "Missing"
   )) %>%
-  mutate(HasReach = (!is.na(REACH_SITE) & REACH_SITE != "Cecilville")) %>%  # Cecilville is not a valid reach and all of those have a lat-long that we will use.
+  mutate(HasReach = (!is.na(REACH_SITE) & REACH_SITE != "Cecilville")) %>% # Cecilville is not a valid reach and all of those have a lat-long that we will use.
   arrange(NMFS_DNA_ID, desc(nchar(gcomp))) %>%
   group_by(NMFS_DNA_ID) %>%
   mutate(rank = 1:n()) %>%
   filter(rank == 1) %>%
   ungroup() %>%
   select(-rank)
-
 ```
 
 Read in extra meta-data that goes with those, so we can do lats and longs if they have them.
 ```{r}
 expando_meta <- read_csv("data/SalmonRiver_RoSA_genotype_full_table_meta.csv") %>%
   select(NMFS_DNA_ID, LATITUDE_F, LONGITUDE_F) %>%
-  rename(Lat = LATITUDE_F,
-         Long = LONGITUDE_F) %>%
+  rename(
+    Lat = LATITUDE_F,
+    Long = LONGITUDE_F
+  ) %>%
   mutate(HasLatLong = ifelse(is.na(Lat), FALSE, TRUE))
 ```
 
@@ -230,7 +233,6 @@ Join on the lat-longs
 expando_r_latlong <- expando_meta %>%
   left_join(expando_rosa, .) %>%
   filter(!is.na(Year))
-
 ```
 
 ## Count up what we have here
@@ -255,7 +257,6 @@ yprg_s <- yprg %>%
 
 # save that to a file:
 write_csv(yprg_s, path = "outputs/010/SalmonRiver_RoSA_genotype_counts.csv")
-
 ```
 The table output above is Table S7 in the paper.
 
@@ -277,7 +278,7 @@ rando_pt_from_linestring <- function(L) {
   lapply(L, function(x) {
     mat <- unclass(x)
     r <- sample(1:nrow(mat), 1)
-    x[r,]
+    x[r, ]
   })
 }
 ```
@@ -291,26 +292,32 @@ has_R <- expando_r_latlong %>%
 # these don't
 no_R_LL <- expando_r_latlong %>%
   filter(HasReach == FALSE, HasLatLong == TRUE) %>%
-  mutate(rLat = Lat, rLong = Long)  # populate the rLat and rLong fields with the same values in these cases
+  mutate(rLat = Lat, rLong = Long) # populate the rLat and rLong fields with the same values in these cases
 
 set.seed(100)
 tmp <- has_R %>%
-  mutate(reach = str_replace_all(REACH_SITE, "[Rr]each ", ""),
-         reach = ifelse(nchar(reach) < 5, reach, NA)) %>% # the wipes out the Cecilvilles...they all have LatLong info.
-  left_join(survey_reaches, by = "reach") 
+  mutate(
+    reach = str_replace_all(REACH_SITE, "[Rr]each ", ""),
+    reach = ifelse(nchar(reach) < 5, reach, NA)
+  ) %>% # the wipes out the Cecilvilles...they all have LatLong info.
+  left_join(survey_reaches, by = "reach")
 
 # grab the five fish in reach 1.  We have a lat-long location for that and we will
 # just manually put the Reach 1 fish in there at that spot, and then wiggle it.
 Reach1_fish <- tmp %>%
   filter(reach == 1) %>%
-  mutate(rLat = 41.377819,
-         rLong = -123.430) 
+  mutate(
+    rLat = 41.377819,
+    rLong = -123.430
+  )
 
 has_R_LL <- tmp %>%
-  filter(sapply(geometry, function(x) nrow(x) > 0))  %>%    # some geometries were missing
+  filter(sapply(geometry, function(x) nrow(x) > 0)) %>% # some geometries were missing
   mutate(rando_point = rando_pt_from_linestring(geometry)) %>%
-  mutate(rLong = map_dbl(rando_point, function(x) x["X"]),
-         rLat = map_dbl(rando_point, function(x) x["Y"])) 
+  mutate(
+    rLong = map_dbl(rando_point, function(x) x["X"]),
+    rLat = map_dbl(rando_point, function(x) x["Y"])
+  )
 
 # now pick out from that only the non-geometry columns
 has_R_LL_pick <- has_R_LL[, c(names(no_R_LL), "rLat", "rLong")]
@@ -340,9 +347,11 @@ m9 <- ggplot() +
   geom_sf(data = salmon_bas, fill = "#e5f5e0") +
   geom_sf(data = salmon_riv, colour = "gray") +
   scale_colour_manual(values = c("#a6bddb", "black")) +
-  theme_bw() + 
-  geom_jitter(data = LL_by_reach_or_coords, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = "black",
-              size = 2.5, width = .02, height = .02) +
+  theme_bw() +
+  geom_jitter(
+    data = LL_by_reach_or_coords, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = "black",
+    size = 2.5, width = .02, height = .02
+  ) +
   geom_sf(data = surv_reaches_lettered, aes(geometry = geometry, colour = reach_alt), show.legend = FALSE) +
   scale_fill_manual(values = c(
     `LL` = "blue",
@@ -351,15 +360,13 @@ m9 <- ggplot() +
     `Ambiguous` = "red",
     `Missing` = "black"
   )) +
-  facet_wrap(~ RoSA_genotype, ncol = 2) +
+  facet_wrap(~RoSA_genotype, ncol = 2) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
   xlab("Longitude") +
   ylab("Latitude") +
   labs(fill = "RoSA Genotype")
 
 ggsave(m9, filename = "outputs/010/salmon-river-map-all-years-faceted-by-geno.pdf", width = 7, height = 10)
-
-
 ```
 
 
@@ -390,9 +397,11 @@ m15 <- ggplot() +
   geom_sf(data = salmon_bas, fill = "#e5f5e0") +
   geom_sf(data = salmon_riv, colour = "gray") +
   scale_colour_manual(values = c("#a6bddb", "black")) +
-  theme_bw() + 
-  geom_jitter(data = alls_2006_weeked, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = "black",
-              size = 2.5, width = .02, height = .02) +
+  theme_bw() +
+  geom_jitter(
+    data = alls_2006_weeked, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = "black",
+    size = 2.5, width = .02, height = .02
+  ) +
   geom_sf(data = surv_reaches_lettered, aes(geometry = geometry, colour = reach_alt), show.legend = FALSE) +
   scale_fill_manual(values = c(
     `LL` = "blue",
@@ -407,7 +416,6 @@ m15 <- ggplot() +
 
 
 ggsave(m15, filename = "outputs/010/salmon-river-spatiotemporal-map-2006.pdf", width = 12, height = 8)
-
 ```
 
 
@@ -430,14 +438,16 @@ for_hwe <- yprg %>%
 # then lump all the "populations" together in each year and compute observed frequencies
 # as well as expected frequencies under HWE
 fhwe_tots <- for_hwe %>%
-  group_by(Year, RoSA_genotype, .drop = FALSE) %>%  # .drop = FALSE to get explicit 0's
+  group_by(Year, RoSA_genotype, .drop = FALSE) %>% # .drop = FALSE to get explicit 0's
   summarise(N = sum(n)) %>%
-  mutate(freq = N / sum(N),
-         NS = 2 * N[RoSA_genotype == "EE"] + N[RoSA_genotype == "EL"],
-         NF = 2 * N[RoSA_genotype == "LL"] + N[RoSA_genotype == "EL"],
-         fS = NS / (NS + NF),
-         fF = NF / (NS + NF)) %>%
-  mutate(hwe_exp_freq = c(fS[1] ^ 2, 2 * fF[1] * fS[1], fF[1] ^ 2)) %>%
+  mutate(
+    freq = N / sum(N),
+    NS = 2 * N[RoSA_genotype == "EE"] + N[RoSA_genotype == "EL"],
+    NF = 2 * N[RoSA_genotype == "LL"] + N[RoSA_genotype == "EL"],
+    fS = NS / (NS + NF),
+    fF = NF / (NS + NF)
+  ) %>%
+  mutate(hwe_exp_freq = c(fS[1]^2, 2 * fF[1] * fS[1], fF[1]^2)) %>%
   mutate(hwe_exp_n = hwe_exp_freq * sum(N))
 ```
 Now, make a table of the relevant numbers here:
@@ -456,19 +466,20 @@ informative comparison.
 hwefig <- ggplot(hwetab %>% filter(Year > 1997 & Year != 2014)) +
   geom_col(aes(x = RoSA_genotype, y = N, fill = RoSA_genotype)) +
   geom_col(aes(x = RoSA_genotype, y = hwe_exp_n), fill = NA, colour = "green", size = 0.5) +
-  geom_col(aes(x = RoSA_genotype, y = hwe_exp_n), fill = NA, colour = "black", size = 0.5,
-           linetype = "dashed") + 
+  geom_col(aes(x = RoSA_genotype, y = hwe_exp_n),
+    fill = NA, colour = "black", size = 0.5,
+    linetype = "dashed"
+  ) +
   scale_fill_manual(values = c(
     `LL` = "blue",
     `EE` = "gold",
     `EL` = "tan2"
   )) +
-  facet_wrap(~ Year, nrow = 1) +
+  facet_wrap(~Year, nrow = 1) +
   theme_bw()
 
 
 ggsave(hwefig, filename = "outputs/010/salmon-river_hwe_counts-3-panel.pdf", width = 8, height = 3)
-
 ```
 
 # Session Info

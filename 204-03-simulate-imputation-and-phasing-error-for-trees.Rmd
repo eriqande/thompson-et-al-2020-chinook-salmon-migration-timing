@@ -43,11 +43,13 @@ final_bits <- function(g, size = 2, stroke = 0.2) {
     geom_tippoint(aes(fill = Ecotype, shape = `Fish Genotype`, colour = Basin), size = size, stroke = stroke) +
     theme(legend.position = "right") +
     scale_shape_manual(values = c(25, 21, 22)) +
-    scale_fill_manual(values = fcolors_all_sf) + 
+    scale_fill_manual(values = fcolors_all_sf) +
     scale_colour_manual(values = fcolors_all_sf) +
-    guides(fill = guide_legend(override.aes = list(shape = 21, stroke = 0.1)),
-           colour = guide_legend(override.aes = list(shape = 21, stroke = 1.1, fill = NA)),
-           shape = guide_legend(title = "Fish Genotype")) 
+    guides(
+      fill = guide_legend(override.aes = list(shape = 21, stroke = 0.1)),
+      colour = guide_legend(override.aes = list(shape = 21, stroke = 1.1, fill = NA)),
+      shape = guide_legend(title = "Fish Genotype")
+    )
 }
 ```
 
@@ -56,27 +58,26 @@ final_bits <- function(g, size = 2, stroke = 0.2) {
 Now, write a function that processes everything and produces a neighbor-joining tree 
 ```{r}
 make_tree_from_bi_snps <- function(
-  haps_bi
-) {
-  
+                                   haps_bi) {
+
   # make a FASTA of the sequences (inserting the variants into them)
   tmpfasta <- str_c(tempfile(), ".fa")
   dump <- ecaRbioinf::insert_variants_into_sequences(
-  V = haps_bi,
-  fasta = "intermediates/009/NC_037124.1_fragment_chinook.fna.gz",
-  lo = 12260034,
-  hi = 12289484,
-  file = tmpfasta
+    V = haps_bi,
+    fasta = "intermediates/009/NC_037124.1_fragment_chinook.fna.gz",
+    lo = 12260034,
+    hi = 12289484,
+    file = tmpfasta
   )
-  
-  
+
+
   # read in the fastas, compute distances, and make a treeio neighbor-joining tree of it
   seqs <- ape::read.FASTA(tmpfasta)
   seqdist <- ape::dist.dna(seqs)
   nj <- ape::nj(seqdist) %>%
     treeio::as.treedata()
   tree <- treeio::full_join(nj, sqm2_jc, by = "label")
-  tree 
+  tree
 }
 ```
 
@@ -103,16 +104,22 @@ as 0, 1, 2, but we have the REF and ALT in each case, so we can figure it out.
 ```{r}
 # first, get those rates into a list
 Ra <- list()
-Ra[["0"]] <- arrange(rates, simulated_new_genotype) %>% filter(imputed_genotype == 0) %>% pull(rate)
-Ra[["1"]] <- arrange(rates, simulated_new_genotype) %>% filter(imputed_genotype == 1) %>% pull(rate)
-Ra[["2"]] <- arrange(rates, simulated_new_genotype) %>% filter(imputed_genotype == 2) %>% pull(rate)
+Ra[["0"]] <- arrange(rates, simulated_new_genotype) %>%
+  filter(imputed_genotype == 0) %>%
+  pull(rate)
+Ra[["1"]] <- arrange(rates, simulated_new_genotype) %>%
+  filter(imputed_genotype == 1) %>%
+  pull(rate)
+Ra[["2"]] <- arrange(rates, simulated_new_genotype) %>%
+  filter(imputed_genotype == 2) %>%
+  pull(rate)
 
 sprinkle_changes <- function(D = haps_bi_rosa, rates = rates, scramble_phase = FALSE) {
   tmp <- D %>%
     select(-anc_vs_derived, -freq, -spring_allele, -freq, -alle2) %>%
     pivot_wider(names_from = c(haplo), values_from = c(allele, haplo_name)) %>%
     mutate(g012 = case_when(
-      allele_a  != allele_b ~ 1L,
+      allele_a != allele_b ~ 1L,
       allele_a == allele_b & allele_a == REF ~ 0L,
       allele_a == allele_b & allele_a == ALT ~ 2L,
       TRUE ~ 999L
@@ -123,24 +130,26 @@ sprinkle_changes <- function(D = haps_bi_rosa, rates = rates, scramble_phase = F
       g012 == 2 ~ sample(x = 0:2, size = n(), prob = Ra[["2"]], replace = TRUE),
       TRUE ~ 999L
     ))
-  
+
   #' check that is correct to this point.  (It looks correct.)
-  check <- tmp %>% count(g012, new012) %>%
-  group_by(g012) %>%
-  mutate(freq = n / sum(n))
-  
+  check <- tmp %>%
+    count(g012, new012) %>%
+    group_by(g012) %>%
+    mutate(freq = n / sum(n))
+
   # now, we just need to translate those back to SNP bases in haplotypes.
   # Note that newly-minted heterozygotes will be randomized with
   # respect to phase
-  
+
   tmp2 <- tmp %>%
-    mutate(orig_hap = str_c(allele_a, "|", allele_b),
-           ra_het = str_c(REF, "|", ALT),
-           ar_het = str_c(ALT, "|", REF),
-           scrambled_het = ifelse(runif(n()) < 0.5, ra_het, ar_het),
-           rr_hom = str_c(REF, "|", REF),
-           aa_hom = str_c(ALT, "|", ALT)
-           ) %>%
+    mutate(
+      orig_hap = str_c(allele_a, "|", allele_b),
+      ra_het = str_c(REF, "|", ALT),
+      ar_het = str_c(ALT, "|", REF),
+      scrambled_het = ifelse(runif(n()) < 0.5, ra_het, ar_het),
+      rr_hom = str_c(REF, "|", REF),
+      aa_hom = str_c(ALT, "|", ALT)
+    ) %>%
     select(-ra_het, -ar_het) %>%
     mutate(new_hap = case_when(
       g012 == new012 ~ orig_hap,
@@ -148,29 +157,30 @@ sprinkle_changes <- function(D = haps_bi_rosa, rates = rates, scramble_phase = F
       new012 == 1 ~ scrambled_het,
       new012 == 2 ~ aa_hom
     ))
-  
+
   # here we scramble the phase of ALL heterozygous sites, if requested
   if (scramble_phase == TRUE) {
     tmp2 <- tmp2 %>%
       mutate(new_hap = ifelse(new012 == 1, scrambled_het, new_hap))
   }
-  
-  
+
+
   # now, we pivot_longer our data frame back to something we can use to make the trees
   tmp2 %>%
     select(-(g012:aa_hom)) %>%
     separate(new_hap, into = c("new_a", "new_b"), sep = "\\|") %>%
-    mutate(allele_a = new_a,
-           allele_b = new_b) %>%
+    mutate(
+      allele_a = new_a,
+      allele_b = new_b
+    ) %>%
     select(-new_a, -new_b, -haplo_name_a, -haplo_name_b) %>%
     pivot_longer(
       cols = allele_a:allele_b,
       names_to = "haplo",
       values_to = "allele"
-    ) %>% 
+    ) %>%
     mutate(haplo = str_replace(haplo, "allele_", "")) %>%
     mutate(haplo_name = str_c(Indiv, "-", haplo))
-    
 }
 ```
 
@@ -192,31 +202,34 @@ length on the final twigs.
 Make the plots.
 ```{r}
 phase_retained_trees <- list(
-  OriginalTree = make_tree_from_bi_snps(haps_bi_rosa) %>% 
-    ggtree() %>% 
+  OriginalTree = make_tree_from_bi_snps(haps_bi_rosa) %>%
+    ggtree() %>%
     final_bits()
 )
 set.seed(5)
 for (i in 2:6) {
   Tag <- str_c("Simulated_Error_Rep_", i - 1)
-  phase_retained_trees[[Tag]] <- sprinkle_changes() %>% 
-    make_tree_from_bi_snps() %>% 
-    ggtree() %>% 
-    final_bits
+  phase_retained_trees[[Tag]] <- sprinkle_changes() %>%
+    make_tree_from_bi_snps() %>%
+    ggtree() %>%
+    final_bits()
 }
 ```
 
 Then put them in a grid:
 ```{r, fig.width = 14, fig.height=20}
 tree_grid <- plot_grid(
-  plotlist = phase_retained_trees, 
-  labels = names(phase_retained_trees), 
-  ncol = 2)
+  plotlist = phase_retained_trees,
+  labels = names(phase_retained_trees),
+  ncol = 2
+)
 
 # print that to an output PDF that is good sized
-ggsave(tree_grid, filename = "outputs/204/phase-remained-tree-grid.pdf",
-       width = 14,
-       height = 20)
+ggsave(tree_grid,
+  filename = "outputs/204/phase-remained-tree-grid.pdf",
+  width = 14,
+  height = 20
+)
 
 # plot it smooshed up too:
 tree_grid
@@ -230,17 +243,17 @@ individuals that are hets for E and L lineage haplotypes.  So, those hets are go
 to be pretty wonky and that might screw things up, but let us see:
 ```{r}
 phase_scrambled_trees <- list(
-  OriginalTree = make_tree_from_bi_snps(haps_bi_rosa) %>% 
-    ggtree() %>% 
+  OriginalTree = make_tree_from_bi_snps(haps_bi_rosa) %>%
+    ggtree() %>%
     final_bits()
 )
 set.seed(5)
 for (i in 2:6) {
   Tag <- str_c("Simulated_Error/PhaseScramble_Rep_", i - 1)
-  phase_scrambled_trees[[Tag]] <- sprinkle_changes(scramble_phase = TRUE) %>% 
-    make_tree_from_bi_snps() %>% 
-    ggtree() %>% 
-    final_bits
+  phase_scrambled_trees[[Tag]] <- sprinkle_changes(scramble_phase = TRUE) %>%
+    make_tree_from_bi_snps() %>%
+    ggtree() %>%
+    final_bits()
 }
 ```
 
@@ -248,14 +261,17 @@ for (i in 2:6) {
 Then put them in a grid:
 ```{r, fig.width = 14, fig.height=20}
 scramble_grid <- plot_grid(
-  plotlist = phase_scrambled_trees, 
-  labels = names(phase_scrambled_trees), 
-  ncol = 2)
+  plotlist = phase_scrambled_trees,
+  labels = names(phase_scrambled_trees),
+  ncol = 2
+)
 
 # print that to an output PDF that is good sized
-ggsave(scramble_grid, filename = "outputs/204/phase-scrambled-tree-grid.pdf",
-       width = 14,
-       height = 20)
+ggsave(scramble_grid,
+  filename = "outputs/204/phase-scrambled-tree-grid.pdf",
+  width = 14,
+  height = 20
+)
 
 # plot it smooshed up too:
 scramble_grid

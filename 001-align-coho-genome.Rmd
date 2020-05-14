@@ -45,7 +45,7 @@ one and then dealing with the paralogs and all sorts of filtering, I can just se
 which chromosomes are homologous in the two species.
 ```{r}
 cc_chroms <- tribble(
-  ~chinook,  ~coho,
+  ~chinook, ~coho,
   1, 10,
   1, 11,
   1, 6,
@@ -70,7 +70,7 @@ cc_chroms <- tribble(
   12, 3,
   12, 8,
   13, 15,
-  13, 16, 
+  13, 16,
   13, 17,
   14, 16,
   14, 17,
@@ -294,27 +294,31 @@ I copied those to stored_results/001.  Let's summarize these into a table:
 bases <- c("a", "c", "g", "t", "A", "C", "G", "T")
 Ns <- c("n", "N")
 var_type <- function(x) {
-  ifelse(x %in% bases, "mono", 
-         ifelse(x %in% Ns, "N", 
-                ifelse(x == "-", "unaligned", "variable")))
+  ifelse(x %in% bases, "mono",
+    ifelse(x %in% Ns, "N",
+      ifelse(x == "-", "unaligned", "variable")
+    )
+  )
 }
 cnts <- read_tsv("stored_results/001/step=20_notransition_inner=1000_identity=92.all_chrom.refcounts.gz") %>%
-  mutate(chinook_type = var_type(chinook),
-         coho_type = var_type(coho)) %>%
-  mutate(same = toupper(chinook) == toupper(coho)) 
+  mutate(
+    chinook_type = var_type(chinook),
+    coho_type = var_type(coho)
+  ) %>%
+  mutate(same = toupper(chinook) == toupper(coho))
 
 var_report <- cnts %>%
   group_by(chrom, chinook_type, coho_type, same) %>%
-  summarise(N = sum(n)) %>% 
+  summarise(N = sum(n)) %>%
   group_by(chrom)
 ```
 
 Note that when each site was considered invariant in chinook and coho, they are the same site about 97.5% of the time:
 ```{r}
-var_report %>% 
-  filter(chinook_type == "mono", coho_type == "mono") %>% 
-  group_by(chrom) %>% 
-  mutate(ppn = N / sum(N)) %>% 
+var_report %>%
+  filter(chinook_type == "mono", coho_type == "mono") %>%
+  group_by(chrom) %>%
+  mutate(ppn = N / sum(N)) %>%
   filter(same == TRUE)
 ```
 which sounds about right.  Cool.
@@ -329,10 +333,10 @@ aln_ppn <- var_report %>%
   group_by(chrom, coho) %>%
   summarise(total = sum(N)) %>%
   group_by(chrom) %>%
-  mutate(ppn = total/sum(total)) %>%
+  mutate(ppn = total / sum(total)) %>%
   select(chrom, coho, ppn) %>%
   spread(coho, ppn)
- 
+
 aln_ppn
 ```
 OK.  We range from about 50% to 70% alignment across these chromosomes.
@@ -370,24 +374,28 @@ And now do some summaries:
 bases <- c("a", "c", "g", "t", "A", "C", "G", "T")
 Ns <- c("n", "N")
 var_type <- function(x) {
-  ifelse(x %in% bases, "mono", 
-         ifelse(x %in% Ns, "N", 
-                ifelse(x == "-", "unaligned", "variable")))
+  ifelse(x %in% bases, "mono",
+    ifelse(x %in% Ns, "N",
+      ifelse(x == "-", "unaligned", "variable")
+    )
+  )
 }
 cnts <- read_tsv("stored_results/001/step=1_transition_inner=1000_identity=92.all_chrom.refcounts.gz") %>%
-  mutate(chinook_type = var_type(chinook),
-         coho_type = var_type(coho)) %>%
-  mutate(same = toupper(chinook) == toupper(coho)) 
+  mutate(
+    chinook_type = var_type(chinook),
+    coho_type = var_type(coho)
+  ) %>%
+  mutate(same = toupper(chinook) == toupper(coho))
 
 var_report <- cnts %>%
   group_by(chrom, chinook_type, coho_type, same) %>%
-  summarise(N = sum(n)) %>% 
+  summarise(N = sum(n)) %>%
   group_by(chrom)
 
-var_report %>% 
-  filter(chinook_type == "mono", coho_type == "mono") %>% 
-  group_by(chrom) %>% 
-  mutate(ppn = N / sum(N)) %>% 
+var_report %>%
+  filter(chinook_type == "mono", coho_type == "mono") %>%
+  group_by(chrom) %>%
+  mutate(ppn = N / sum(N)) %>%
   filter(same == TRUE)
 ```
 Very similar proportions of DNA similarity...
@@ -401,23 +409,22 @@ aln_ppn2 <- var_report %>%
   group_by(chrom, coho) %>%
   summarise(total = sum(N)) %>%
   group_by(chrom) %>%
-  mutate(ppn = total/sum(total)) %>%
+  mutate(ppn = total / sum(total)) %>%
   select(chrom, coho, ppn) %>%
   spread(coho, ppn)
- 
+
 aln_ppn2
 ```
 
 Compare those
 ```{r, message=FALSE}
-aln_ppn %>% 
+aln_ppn %>%
   rename(quick_aln = aligned) %>%
   select(chrom, quick_aln) %>%
   left_join(aln_ppn2) %>%
-  ggplot(., aes(x = quick_aln, y = aligned)) + 
-    geom_point() + 
-    geom_abline(slope = 1, intercept = 0, colour = "red")
-    
+  ggplot(., aes(x = quick_aln, y = aligned)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, colour = "red")
 ```
 
 Effectively no difference there in the results, it appears.
@@ -494,19 +501,3 @@ Sys.time() - start_time
 
 
 # Citations
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

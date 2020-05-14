@@ -1,12 +1,9 @@
 Thompson et. al. 2020, Data and Code Repository
 ================
 Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell,
-Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza
+Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza
 
-**Last Updated:**
-2020-05-12
-
-[![DOI](https://zenodo.org/badge/263405637.svg)](https://zenodo.org/badge/latestdoi/263405637)
+**Last Updated:** 2020-05-14
 
 This repository includes code, data, and some intermediate results to
 reproduce the results in Thompson et al. (“A complex phenotype in salmon
@@ -167,7 +164,12 @@ and then put some things in there:
 ## Unix Programs
 
 The following programs must be installed and available in the PATH.
-Versions we used appear in parentheses.
+Versions used on Eric’s laptop appear in parentheses.
+
+  - [`angsd`](http://www.popgen.dk/angsd/index.php/ANGSD) (Version:
+    0.920, using htslib: 1.6)
+
+  - [`bwa`](https://github.com/lh3/bwa) (Version: 0.7.16a-r1181)
 
   - [`samtools`](http://www.htslib.org/) (Version: 1.3, using htslib
     1.3)
@@ -192,7 +194,7 @@ Versions we used appear in parentheses.
     thus:
     
     ``` sh
-    wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.03.tar.gz # slightly older version that originally used on my Mac
+    wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.03.tar.gz # slightly older version than originally used on my Mac
     gunzip lastz-1.04.03.tar.gz
     tar -xvf lastz-1.04.03.tar
     cd lastz-distrib-1.04.03/
@@ -256,6 +258,8 @@ So,
 ls snpEff_v4_3t_core/snpEff/snpEff.jar 
 ```
 
+    ## snpEff_v4_3t_core/snpEff/snpEff.jar
+
 ## R Packages
 
 Packages must be downloaded from CRAN, BioConductor, and GitHub. The
@@ -275,8 +279,11 @@ install.packages(
     "cowplot",
     "ggsn",
     "ggspatial",
+    "kableExtra",
     "knitr",
     "lubridate",
+    "maps",
+    "mapproj",
     "nlme",
     "pander",
     "parallel",
@@ -293,21 +300,23 @@ install.packages(
     "tidyverse",
     "vcfR",
     "viridis",
+    "whoa",
     "zoo"
   ),
   repos = "http://cran.rstudio.com"
 )
 
 # Note that, on the cluster, since I don't have admin access,
-# I needed to get the sysadmin to get rgdal installed and to 
+# I needed to get the sysadmin to get rgdal installed and to
 # install libudunits2.so in order to complete the install of:
 # units, rgdal, sf, rosm, lwgeom, ggsn, ggspatial
 
 
 
 # get the packages needed from BioConductor
-if (!requireNamespace("BiocManager", quietly = TRUE))
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager", repos = "http://cran.rstudio.com")
+}
 
 BiocManager::install("ggtree")
 BiocManager::install("treeio")

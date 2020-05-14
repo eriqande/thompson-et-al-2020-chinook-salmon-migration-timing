@@ -29,7 +29,7 @@ dir.create("./outputs/100", recursive = TRUE, showWarnings = FALSE)
 ## Grab basemap and state lines
 
 ```{r}
-nat.earth <- brick('geo-spatial/NE2_HR_LC_SR_W_DR/NE2_HR_LC_SR_W_DR.tif') #
+nat.earth <- brick("geo-spatial/NE2_HR_LC_SR_W_DR/NE2_HR_LC_SR_W_DR.tif") #
 state_prov <- st_read("geo-spatial/ne_10m_admin_1_states_provinces_lines/ne_10m_admin_1_states_provinces_lines.shp")
 coastline <- st_read("geo-spatial/ne_10m_coastline/ne_10m_coastline.shp")
 ```
@@ -49,8 +49,8 @@ butte <- st_read("./data/Butte Creek/butte_creek2.shp")
 battle <- st_read("./data/Battle Creek/battle_creek2.shp")
 deer <- st_read("./data/Deer Creek/deer_creek2.shp")
 # this is how we saved them all
-# save(cali_rivers, siletz, salmon, butte, battle, deer, 
-#     file = "stored_results/100/rivers.rda", 
+# save(cali_rivers, siletz, salmon, butte, battle, deer,
+#     file = "stored_results/100/rivers.rda",
 #     compress = "xz")
 ```
 
@@ -61,7 +61,7 @@ load("stored_results/100/rivers.rda")
 ## Transform
 
 ```{r}
-#reproject all files to basemap coords
+# reproject all files to basemap coords
 cali_rivers_repro <- st_transform(cali_rivers, "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
 siletz_repro <- st_transform(siletz, "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
 salmon_repro <- st_transform(salmon, "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
@@ -75,18 +75,20 @@ deer_repro <- st_transform(deer, "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS
 ```{r}
 # important to put them in this order and named like this
 domain <- c(
-  xmin = -130, 
+  xmin = -130,
   xmax = -115,
   ymin = 35.5,
   ymax = 45.5
 )
-nat.crop <- crop(nat.earth, y=extent(domain))
+nat.crop <- crop(nat.earth, y = extent(domain))
 state.subset <- st_crop(state_prov, domain)
 coastline_cropped <- st_crop(coastline, domain)
 cali2plot <- st_crop(st_zm(cali_rivers_repro), domain)
 rosa_rivers <- cali2plot %>%
-  filter(GNIS_Name %in% c("Sacramento River","Russian River", "Eel River", "Trinity River", 
-                        "Klamath River", "San Joaquin River", "Feather River"))
+  filter(GNIS_Name %in% c(
+    "Sacramento River", "Russian River", "Eel River", "Trinity River",
+    "Klamath River", "San Joaquin River", "Feather River"
+  ))
 ```
 
 
@@ -100,34 +102,38 @@ fish_sites <- read_csv("./data/100-RoSA_sample_sites.csv")
 ```{r base-map-with-sampling-sites}
 base_map <- ggplot() +
   ggspatial::layer_spatial(nat.crop) +
-  geom_sf(data = state.subset, color = 'gray30', fill = NA) +
+  geom_sf(data = state.subset, color = "gray30", fill = NA) +
   geom_sf(data = coastline_cropped, color = "gray30", fill = NA) +
-  geom_sf(data = rosa_rivers, colour = "blue", size=0.5) +
-  geom_sf(data = siletz_repro, colour = "blue", size=0.5) +
-  geom_sf(data = salmon_repro, colour = "blue", size=0.5) +
-  geom_sf(data = battle_repro, colour = "blue", size=0.5) +
-  geom_sf(data = butte_repro, colour = "blue", size=0.5) +
-  geom_sf(data = deer_repro, colour = "blue", size=0.5) +
-  geom_text(data = fish_sites,aes(x = name_long, y = name_lat,label = pop, family = "serif", fontface = font_type), size=3.5) +
-  geom_segment(data = fish_sites%>%filter(!pop%in%c("San Joaquin","River (F)")), mapping = aes(x = line_long, xend = longitude, y = name_lat-0.05, yend = latitude), size = 0.5) +
-    geom_segment(data = fish_sites%>%filter(pop=="San Joaquin"), mapping = aes(x = line_long, xend = longitude, y = name_lat-0.55, yend = latitude), size = 0.5) +
-  geom_point(data = fish_sites, mapping = aes(x = longitude, y = latitude),fill=fish_sites$color2, colour=fish_sites$color2) +
+  geom_sf(data = rosa_rivers, colour = "blue", size = 0.5) +
+  geom_sf(data = siletz_repro, colour = "blue", size = 0.5) +
+  geom_sf(data = salmon_repro, colour = "blue", size = 0.5) +
+  geom_sf(data = battle_repro, colour = "blue", size = 0.5) +
+  geom_sf(data = butte_repro, colour = "blue", size = 0.5) +
+  geom_sf(data = deer_repro, colour = "blue", size = 0.5) +
+  geom_text(data = fish_sites, aes(x = name_long, y = name_lat, label = pop, family = "serif", fontface = font_type), size = 3.5) +
+  geom_segment(data = fish_sites %>% filter(!pop %in% c("San Joaquin", "River (F)")), mapping = aes(x = line_long, xend = longitude, y = name_lat - 0.05, yend = latitude), size = 0.5) +
+  geom_segment(data = fish_sites %>% filter(pop == "San Joaquin"), mapping = aes(x = line_long, xend = longitude, y = name_lat - 0.55, yend = latitude), size = 0.5) +
+  geom_point(data = fish_sites, mapping = aes(x = longitude, y = latitude), fill = fish_sites$color2, colour = fish_sites$color2) +
   scale_x_continuous(expand = c(0, 0)) +
-  xlab("Longitude")+
-  scale_y_continuous("Latitude",expand = c(0, 0)) +
-  coord_sf(xlim = domain[1:2],  ylim = domain[3:4]) +
-  scalebar(x.min = domain[1], x.max = domain[2], y.min = domain[3], y.max = domain[4], 
-           location = "bottomright", model = "WGS84", dist = 250, anchor = c(x = -123, y = 36), st.size = 2.5, transform = TRUE, dist_unit = "km") +
-  theme_bw()+
-  theme(panel.border = element_rect(colour="black", size=1),
-        axis.text.x = element_text(size=8, family = "serif", angle = 35, hjust = 1),
-        axis.text.y = element_text(size=8, family = "serif"),
-        axis.title.y = element_text(family = "serif",size=10),
-        axis.title.x = element_text(family = "serif",vjust=2,size=10),
-        plot.margin = margin(0,0.1,0,0.15, "cm"),
-        legend.position = "none") 
+  xlab("Longitude") +
+  scale_y_continuous("Latitude", expand = c(0, 0)) +
+  coord_sf(xlim = domain[1:2], ylim = domain[3:4]) +
+  scalebar(
+    x.min = domain[1], x.max = domain[2], y.min = domain[3], y.max = domain[4],
+    location = "bottomright", model = "WGS84", dist = 250, anchor = c(x = -123, y = 36), st.size = 2.5, transform = TRUE, dist_unit = "km"
+  ) +
+  theme_bw() +
+  theme(
+    panel.border = element_rect(colour = "black", size = 1),
+    axis.text.x = element_text(size = 8, family = "serif", angle = 35, hjust = 1),
+    axis.text.y = element_text(size = 8, family = "serif"),
+    axis.title.y = element_text(family = "serif", size = 10),
+    axis.title.x = element_text(family = "serif", vjust = 2, size = 10),
+    plot.margin = margin(0, 0.1, 0, 0.15, "cm"),
+    legend.position = "none"
+  )
 
-#base_map
+# base_map
 ```
 
 ## add north arrow to map.
@@ -135,24 +141,26 @@ base_map <- ggplot() +
 arrow_map <- base_map +
   north(x.min = domain[-1], x.max = domain[2], y.min = domain[3], y.max = domain[4], location = "bottomright", anchor = c(x = -120.25, y = 36.5))
 
-#arrow_map
+# arrow_map
 ```
 
 ## Now, work on the world-scale map with the inset:
 ```{r inset-map}
 wrld <- map_data("state")
 domain_df <- data_frame(point = 1:length(domain), long = rep(domain[1:2], each = 2), lat = c(domain[3:4], rev(domain[3:4])))
-inset_world <- ggplot() + 
-  geom_path(data = wrld, aes(x=long, y=lat, group=group), colour="black", size = 0.1) +
+inset_world <- ggplot() +
+  geom_path(data = wrld, aes(x = long, y = lat, group = group), colour = "black", size = 0.1) +
   geom_polygon(data = domain_df, mapping = aes(x = long, y = lat), colour = "red", fill = "red", alpha = 0.3) +
-  coord_map("ortho", orientation=c(41, -132, 0)) +
+  coord_map("ortho", orientation = c(41, -132, 0)) +
   theme_bw() +
   labs(x = NULL, y = NULL) +
-  theme(axis.title= element_blank(),
-        axis.text = element_blank(),
-        axis.ticks = element_blank(),
-        plot.margin = unit(c(0,0,-1,-1), "mm"))
-#inset_world
+  theme(
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.margin = unit(c(0, 0, -1, -1), "mm")
+  )
+# inset_world
 ```
 
 ## Use cowplot to make the inset appear on the bigger map
@@ -160,9 +168,9 @@ inset_world <- ggplot() +
 ```{r cowplot-to-make-inset}
 final_map <- ggdraw() +
   draw_plot(arrow_map) +
-  draw_plot(inset_world, x=0.7, y=0.725, width=0.25, height = 0.2) 
-   
-ggsave(final_map, filename = "./outputs/100/RoSA_figure1_map_with_inset.pdf", width = 4.75, height=4.25)
+  draw_plot(inset_world, x = 0.7, y = 0.725, width = 0.25, height = 0.2)
+
+ggsave(final_map, filename = "./outputs/100/RoSA_figure1_map_with_inset.pdf", width = 4.75, height = 4.25)
 # and then plot it in the notebook (albeit at different size) too
 final_map
 ```

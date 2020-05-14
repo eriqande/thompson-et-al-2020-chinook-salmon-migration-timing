@@ -257,7 +257,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">102.1-klamath-estuary-partial-correlation</h1>
 <h4 class="author">Neil Thompson</h4>
-<h4 class="date">Last Updated: 2020-05-11</h4>
+<h4 class="date">Last Updated: 2020-05-14</h4>
 
 </div>
 
@@ -271,26 +271,31 @@ library(ppcor)</code></pre>
 </ol>
 <pre class="r"><code>rosa_data &lt;- read_rds(&quot;./data/101-RoSA-klamath-estuary-samples.rds&quot;)
 
-klaten_nomiss &lt;- rosa_data %&gt;% distinct(Indiv,.keep_all=T) %&gt;%
-  filter(!str_detect(rosa,&quot;\\?&quot;))</code></pre>
+klaten_nomiss &lt;- rosa_data %&gt;%
+  distinct(Indiv, .keep_all = T) %&gt;%
+  filter(!str_detect(rosa, &quot;\\?&quot;))</code></pre>
 <p>There are 505 at-entry estuary samples with 100% complete genotypes. There are 515 Klamath at-entry estuary samples.</p>
 <ol start="2" style="list-style-type: decimal">
 <li>load metadata for estuary samples. Join RoSA data to the metadata.</li>
 </ol>
 <pre class="r"><code>estuary_meta &lt;- read_csv(&quot;./data/102-Klamath-entryDATA_withNMFSID.csv&quot;)</code></pre>
 <pre><code>## Warning: Missing column names filled in: 'X16' [16]</code></pre>
-<pre class="r"><code>rosa_meta &lt;- left_join(estuary_meta, rosa_data, by=c(&quot;NMFS ID&quot; = &quot;NMFS_DNA_ID&quot;)) %&gt;%
+<pre class="r"><code>rosa_meta &lt;- left_join(estuary_meta, rosa_data, by = c(&quot;NMFS ID&quot; = &quot;NMFS_DNA_ID&quot;)) %&gt;%
   dplyr::select(-ID) %&gt;%
-  rename(NMFS_DNA_ID = 'NMFS ID') %&gt;%
+  rename(NMFS_DNA_ID = &quot;NMFS ID&quot;) %&gt;%
   dplyr::select(NMFS_DNA_ID, rosa, everything())</code></pre>
 <p>Make dataframe to calculate partial correlations from.</p>
 <pre class="r"><code>rosa_stats &lt;- rosa_meta %&gt;%
-  filter(!str_detect(rosa,&quot;\\?&quot;),
-         rosa %in% c(&quot;EEEEEEEE&quot;,&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;)) %&gt;% #remove samples with missing data and recombinant genotypes
-  mutate(log_jday = log(julian),
-         rosa_f = as.numeric(factor(rosa, levels=c(&quot;EEEEEEEE&quot;,&quot;HHHHHHHH&quot;,&quot;LLLLLLLL&quot;))),
-         year_f = as.numeric(factor(year, levels =c(&quot;2009&quot;,&quot;2010&quot;))),
-         sex_f =as.numeric(factor(sex, levels=c(&quot;f&quot;,&quot;m&quot;)))) 
+  filter(
+    !str_detect(rosa, &quot;\\?&quot;),
+    rosa %in% c(&quot;EEEEEEEE&quot;, &quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;)
+  ) %&gt;% # remove samples with missing data and recombinant genotypes
+  mutate(
+    log_jday = log(julian),
+    rosa_f = as.numeric(factor(rosa, levels = c(&quot;EEEEEEEE&quot;, &quot;HHHHHHHH&quot;, &quot;LLLLLLLL&quot;))),
+    year_f = as.numeric(factor(year, levels = c(&quot;2009&quot;, &quot;2010&quot;))),
+    sex_f = as.numeric(factor(sex, levels = c(&quot;f&quot;, &quot;m&quot;)))
+  )
 
 str(rosa_stats)</code></pre>
 <pre><code>## tibble [502 × 22] (S3: spec_tbl_df/tbl_df/tbl/data.frame)
@@ -317,28 +322,28 @@ str(rosa_stats)</code></pre>
 ##  $ year_f     : num [1:502] 1 1 1 1 1 1 1 1 1 1 ...
 ##  $ sex_f      : num [1:502] 1 1 2 1 2 2 2 1 2 1 ...</code></pre>
 <p>partial correlation between fatness and sampling date controlling for RoSA, year and sex.</p>
-<pre class="r"><code>pcor.test(rosa_stats$drywet, rosa_stats$julian, rosa_stats[,c(&quot;rosa_f&quot;,&quot;year_f&quot;, &quot;sex_f&quot;)]) #-0.255</code></pre>
+<pre class="r"><code>pcor.test(rosa_stats$drywet, rosa_stats$julian, rosa_stats[, c(&quot;rosa_f&quot;, &quot;year_f&quot;, &quot;sex_f&quot;)]) #-0.255</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["estimate"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["p.value"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["statistic"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[4],"type":["int"],"align":["right"]},{"label":["gp"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Method"],"name":[6],"type":["fctr"],"align":["left"]}],"data":[{"1":"-0.2551721","2":"7.390421e-09","3":"-5.883445","4":"502","5":"3","6":"pearson"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 <p>partial correlation between GSI and sampling date controlling for RoSA, year and sex.</p>
-<pre class="r"><code>pcor.test(rosa_stats$gsi, rosa_stats$julian, rosa_stats[,c(&quot;rosa_f&quot;,&quot;year_f&quot;, &quot;sex_f&quot;)]) # 0.533</code></pre>
+<pre class="r"><code>pcor.test(rosa_stats$gsi, rosa_stats$julian, rosa_stats[, c(&quot;rosa_f&quot;, &quot;year_f&quot;, &quot;sex_f&quot;)]) # 0.533</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["estimate"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["p.value"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["statistic"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[4],"type":["int"],"align":["right"]},{"label":["gp"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Method"],"name":[6],"type":["fctr"],"align":["left"]}],"data":[{"1":"0.5333531","2":"5.012548e-38","3":"14.05652","4":"502","5":"3","6":"pearson"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 <p>Partial correlation analysis between fatness and RoSA genotype, controlling for sex, and year as fixed effects.</p>
-<pre class="r"><code>pcor.test(rosa_stats$drywet, rosa_stats$rosa_f, rosa_stats[,c(&quot;julian&quot;,&quot;year_f&quot;, &quot;sex_f&quot;)]) #0.079</code></pre>
+<pre class="r"><code>pcor.test(rosa_stats$drywet, rosa_stats$rosa_f, rosa_stats[, c(&quot;julian&quot;, &quot;year_f&quot;, &quot;sex_f&quot;)]) # 0.079</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["estimate"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["p.value"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["statistic"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[4],"type":["int"],"align":["right"]},{"label":["gp"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Method"],"name":[6],"type":["fctr"],"align":["left"]}],"data":[{"1":"0.07946052","2":"0.07616792","3":"1.777072","4":"502","5":"3","6":"pearson"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
 <p>Partial correlation analysis between GSI and RoSA genotype, controlling for sex, and year as fixed effects.</p>
-<pre class="r"><code>pcor.test(rosa_stats$gsi, rosa_stats$rosa_f, rosa_stats[,c(&quot;julian&quot;,&quot;year_f&quot;, &quot;sex_f&quot;)]) #-0.096</code></pre>
+<pre class="r"><code>pcor.test(rosa_stats$gsi, rosa_stats$rosa_f, rosa_stats[, c(&quot;julian&quot;, &quot;year_f&quot;, &quot;sex_f&quot;)]) #-0.096</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["estimate"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["p.value"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["statistic"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[4],"type":["int"],"align":["right"]},{"label":["gp"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Method"],"name":[6],"type":["fctr"],"align":["left"]}],"data":[{"1":"-0.09609443","2":"0.03185923","3":"-2.152241","4":"502","5":"3","6":"pearson"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
@@ -346,13 +351,13 @@ str(rosa_stats)</code></pre>
 </div>
 <p>Little correlation between RoSA genotype and adiposity or maturation status. This is a less formal test that RoSA has little influence on the physiological traits thought to be central to the spring-run and fall-run ecotype differentiation.</p>
 <p>Partial correlations using log(julian_day) instead of julian day. I doubt this will change much of anything, but log(julian_day) is the predictor variable we used in the mixed effects model selection analyses.</p>
-<pre class="r"><code>pcor.test(rosa_stats$drywet, rosa_stats$log_jday, rosa_stats[,c(&quot;rosa_f&quot;,&quot;year_f&quot;, &quot;sex_f&quot;)]) #-0.242</code></pre>
+<pre class="r"><code>pcor.test(rosa_stats$drywet, rosa_stats$log_jday, rosa_stats[, c(&quot;rosa_f&quot;, &quot;year_f&quot;, &quot;sex_f&quot;)]) #-0.242</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["estimate"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["p.value"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["statistic"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[4],"type":["int"],"align":["right"]},{"label":["gp"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Method"],"name":[6],"type":["fctr"],"align":["left"]}],"data":[{"1":"-0.2421454","2":"4.319275e-08","3":"-5.563849","4":"502","5":"3","6":"pearson"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
   </script>
 </div>
-<pre class="r"><code>pcor.test(rosa_stats$gsi, rosa_stats$log_jday, rosa_stats[,c(&quot;rosa_f&quot;,&quot;year_f&quot;, &quot;sex_f&quot;)]) # 0.476</code></pre>
+<pre class="r"><code>pcor.test(rosa_stats$gsi, rosa_stats$log_jday, rosa_stats[, c(&quot;rosa_f&quot;, &quot;year_f&quot;, &quot;sex_f&quot;)]) # 0.476</code></pre>
 <div data-pagedtable="false">
 <script data-pagedtable-source type="application/json">
 {"columns":[{"label":["estimate"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["p.value"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["statistic"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["n"],"name":[4],"type":["int"],"align":["right"]},{"label":["gp"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["Method"],"name":[6],"type":["fctr"],"align":["left"]}],"data":[{"1":"0.4763201","2":"1.264631e-29","3":"12.07686","4":"502","5":"3","6":"pearson"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
@@ -373,7 +378,7 @@ str(rosa_stats)</code></pre>
 ##  collate  en_US.UTF-8                 
 ##  ctype    en_US.UTF-8                 
 ##  tz       America/Denver              
-##  date     2020-05-11                  
+##  date     2020-05-14                  
 ## 
 ## ─ Packages ───────────────────────────────────────────────────────────────────
 ##  package     * version  date       lib source        
@@ -445,7 +450,7 @@ str(rosa_stats)</code></pre>
 <h1>Running Time</h1>
 <p>Running the code and rendering this notebook required approximately this much time on a Mac laptop of middling speed:</p>
 <pre class="r"><code>Sys.time() - start_time</code></pre>
-<pre><code>## Time difference of 1.398284 secs</code></pre>
+<pre><code>## Time difference of 1.657841 secs</code></pre>
 </div>
 
 

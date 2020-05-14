@@ -47,7 +47,6 @@ library(cowplot)
 
 dir.create("outputs/009", recursive = TRUE, showWarnings = FALSE)
 dir.create("intermediates/009", recursive = TRUE, showWarnings = FALSE)
-
 ```
 
 
@@ -69,7 +68,7 @@ USE_STORED_BIG_HAPS <- TRUE
 if (USE_STORED_BIG_HAPS != TRUE) {
   haps <- read_rds(path = "outputs/004/big_haps2.rds")
   fish_jc <- read_rds(path = "outputs/004/jc_fish_haps.rds")
-  
+
   # Make a data frame with everyone, Johnson Creek included:
   haps_jc <- bind_rows(haps, fish_jc)
 } else {
@@ -105,7 +104,7 @@ seq_meta <- Ssums %>%
   group_by(Indiv) %>%
   mutate(inHetFish = any(NumSs < 125) & any(NumSs >= 125)) %>%
   ungroup() %>%
-  mutate(label = str_replace(haplo_name, "-([ab])", ".\\1")) %>%  # make names the same as in tree
+  mutate(label = str_replace(haplo_name, "-([ab])", ".\\1")) %>% # make names the same as in tree
   select(label, everything())
 
 # write this out for later playing
@@ -166,7 +165,7 @@ dump <- ecaRbioinf::insert_variants_into_sequences(
   lo = 12260034,
   hi = 12289484,
   file = "intermediates/009/chinook_rosa_seqs.fa"
-  )
+)
 
 dump_jc <- ecaRbioinf::insert_variants_into_sequences(
   V = haps_bi_jc,
@@ -174,7 +173,7 @@ dump_jc <- ecaRbioinf::insert_variants_into_sequences(
   lo = 12260034,
   hi = 12289484,
   file = "intermediates/009/Prelim-chinook_rosa_seqs_jc.fa"
-  )
+)
 ```
 
 **A minor adjustment for the Johnson Creek fish**: It turns out that since we only have one haplotype for the JC fish,
@@ -263,8 +262,8 @@ seq_meta_jc <- bind_rows(
     ecotype = "Spring/Summer Run",
     lineage = "Upper Columbia",
     NumSs = NA,
-    inHetFish = FALSE  # we don't know this since we just get one haplo, essentially.
-    )
+    inHetFish = FALSE # we don't know this since we just get one haplo, essentially.
+  )
 )
 ```
 
@@ -279,11 +278,13 @@ final_bits <- function(g) {
     geom_tippoint(aes(fill = Ecotype, shape = `Fish Genotype`, colour = Basin), size = 5, stroke = 1.1) +
     theme(legend.position = "right") +
     scale_shape_manual(values = c(25, 21, 22)) +
-    scale_fill_manual(values = fcolors_all_sf) + 
+    scale_fill_manual(values = fcolors_all_sf) +
     scale_colour_manual(values = fcolors_all_sf) +
-    guides(fill = guide_legend(override.aes = list(shape = 21, stroke = 0.1)),
-           colour = guide_legend(override.aes = list(shape = 21, stroke = 1.1, fill = NA)),
-           shape = guide_legend(title = "Fish Genotype")) 
+    guides(
+      fill = guide_legend(override.aes = list(shape = 21, stroke = 0.1)),
+      colour = guide_legend(override.aes = list(shape = 21, stroke = 1.1, fill = NA)),
+      shape = guide_legend(title = "Fish Genotype")
+    )
 }
 ```
 
@@ -298,11 +299,11 @@ But we will include the Johnson Creek fish.
 tmptree_jc <- treeio::read.newick("outputs/009/rosa-chinook-only-newick_jc.txt") %>%
   treeio::as.treedata()
 
-# now, one cool thing about the ggtree family of packages by 
+# now, one cool thing about the ggtree family of packages by
 # Guangchuang Yu is that you can attach all sorts of info
 # to these data.
 sqm2_jc <- seq_meta_jc %>%
-  mutate(Basin = recode(lineage, Sacto  = "Sacramento", Klamath = "Klamath")) %>%
+  mutate(Basin = recode(lineage, Sacto = "Sacramento", Klamath = "Klamath")) %>%
   mutate(Ecotype = recode(ecotype,
     Fall = "Fall Run",
     Spring = "Spring Run",
@@ -317,9 +318,6 @@ sqm2_jc <- seq_meta_jc %>%
 write_rds(sqm2_jc, path = "outputs/009/sqm2_jc.rds", compress = "xz")
 
 tree_jc <- treeio::full_join(tmptree_jc, sqm2_jc, by = "label")
-
-
-
 ```
 
 
@@ -341,7 +339,7 @@ Be warned.  This takes about an hour of computation.
 if (RECOMPUTE_DAYLIGHT_LAYOUT == TRUE) {
   # note, the following takes almost an hour!
   unrooted_jc <- ggtree(tree_jc, layout = "unrooted")
-  
+
   # save that in outputs so that we don't have to regenerate it
   write_rds(unrooted_jc, path = "stored_results/009/unrooted_jc.rds", compress = "xz")
 } else {
@@ -353,12 +351,10 @@ if (RECOMPUTE_DAYLIGHT_LAYOUT == TRUE) {
 # I don't know why the default timescale is not working out there...maybe cuz it is an unrooted tree.
 
 unrooted_final_jc <- final_bits(unrooted_jc) +
-  geom_treescale(width = 0.001, offset = 0.00005, y = -0.07889505, x = -0.1300)  
+  geom_treescale(width = 0.001, offset = 0.00005, y = -0.07889505, x = -0.1300)
 
 # save the figure as a PDF file
 ggsave(unrooted_final_jc, filename = "outputs/009/chinook-only-distance-unrooted-tree_jc.pdf", width = 10, height = 8)
-
-
 ```
 
 
@@ -369,11 +365,11 @@ Read the tree.
 cctmptree <- treeio::read.newick("outputs/009/rosa-newick.txt") %>%
   treeio::as.treedata()
 
-# now, one cool thing about the ggtree family of packages by 
+# now, one cool thing about the ggtree family of packages by
 # Guangchuang Yu is that you can attach all sorts of info
 # to these data.
 sqm2 <- seq_meta %>%
-  mutate(Basin = recode(lineage, Sacto  = "Sacramento", Klamath = "Klamath")) %>%
+  mutate(Basin = recode(lineage, Sacto = "Sacramento", Klamath = "Klamath")) %>%
   mutate(Ecotype = recode(ecotype,
     Fall = "Fall Run",
     Spring = "Spring Run",
@@ -385,10 +381,12 @@ sqm2 <- seq_meta %>%
 
 # add coho to seq_meta
 sm2 <- sqm2 %>%
-  bind_rows(., tibble(label = "Coho_ref_sequence", 
-                      `Fish Genotype` = "Homozygous", 
-                      Ecotype = "Coho",
-                      Basin = NA)) %>%
+  bind_rows(., tibble(
+    label = "Coho_ref_sequence",
+    `Fish Genotype` = "Homozygous",
+    Ecotype = "Coho",
+    Basin = NA
+  )) %>%
   rename(`ecotype/species` = ecotype)
 
 
@@ -398,25 +396,26 @@ cctree <- treeio::full_join(cctmptree, sm2, by = "label")
 Plot an unrooted tree from that.
 ```{r}
 if (RECOMPUTE_DAYLIGHT_LAYOUT == TRUE) {
-  ccunrooted <- ggtree(cctree, layout = "unrooted") 
-  
+  ccunrooted <- ggtree(cctree, layout = "unrooted")
+
   # save that in outputs so that we don't have to regenerate it if we want to play with it
   write_rds(ccunrooted, path = "stored_results/009/ccunrooted.rds", compress = "xz")
 } else {
   ccunrooted <- read_rds("stored_results/009/ccunrooted.rds")
 }
 ccfinal <- ccunrooted +
-  geom_tippoint(aes(fill = Ecotype, shape = `Fish Genotype`),  colour = "black", size = 3, stroke = 0.1) +
-    theme(legend.position = "right") +
-    scale_shape_manual(values = c(25, 21)) +
-    scale_fill_manual(values = fcolors_all_sf) + 
-    scale_colour_manual(values = fcolors_all_sf) +
-    guides(fill = guide_legend(title = "Ecotype/Species", order = 1, override.aes = list(shape = 21, stroke = 0.1)),
-           shape = guide_legend(title = "Fish Genotype"))  +
-  geom_treescale(width = 0.01, offset = 0.0005, y = -0.0701, x = -0.130) 
+  geom_tippoint(aes(fill = Ecotype, shape = `Fish Genotype`), colour = "black", size = 3, stroke = 0.1) +
+  theme(legend.position = "right") +
+  scale_shape_manual(values = c(25, 21)) +
+  scale_fill_manual(values = fcolors_all_sf) +
+  scale_colour_manual(values = fcolors_all_sf) +
+  guides(
+    fill = guide_legend(title = "Ecotype/Species", order = 1, override.aes = list(shape = 21, stroke = 0.1)),
+    shape = guide_legend(title = "Fish Genotype")
+  ) +
+  geom_treescale(width = 0.01, offset = 0.0005, y = -0.0701, x = -0.130)
 
 ggsave(ccfinal, filename = "outputs/009/with-coho-unrooted-tree.pdf", width = 10, height = 8)
-  
 ```
 
 The layout procedure for that takes over an hour, and might have a random element, because it comes out
@@ -429,18 +428,19 @@ in `stored/results/009/with-coho-unrooted-tree.pdf`.
 Last thing in this notebook is calcuating the fraction of the distance from Coho
 to the Fall-run group at which the spring run subtree branches off.
 ```{r}
-gt <- ggtree(cctree) + 
-  geom_tippoint(aes(fill = Ecotype, shape = `Fish Genotype`),  colour = "black", size = 3, stroke = 0.1) + 
+gt <- ggtree(cctree) +
+  geom_tippoint(aes(fill = Ecotype, shape = `Fish Genotype`), colour = "black", size = 3, stroke = 0.1) +
   geom_text2(aes(label = node), hjust = -0.5) +
   theme(legend.position = "right") +
   scale_shape_manual(values = c(25, 21)) +
-  scale_fill_manual(values = fcolors_all_sf) + 
+  scale_fill_manual(values = fcolors_all_sf) +
   scale_colour_manual(values = fcolors_all_sf) +
-  guides(fill = guide_legend(title = "Ecotype/Species", order = 1, override.aes = list(shape = 21, stroke = 0.1)),
-         shape = guide_legend(title = "Fish Genotype"))
+  guides(
+    fill = guide_legend(title = "Ecotype/Species", order = 1, override.aes = list(shape = 21, stroke = 0.1)),
+    shape = guide_legend(title = "Fish Genotype")
+  )
 
 ggsave(gt, filename = "outputs/009/help-find-distances-1.pdf", width = 30, height = 30)
-
 ```
 
 From that, it is quite clear that Coho is node #206, and the node where the split between fall-run and spring-run occurs
@@ -461,7 +461,7 @@ desc_from_431 <- tidytree::offspring(as_tibble(cctree), 431) %>%
 # or the max of that, whichever I see fit.
 MN <- max(c(desc_from_431$parent, desc_from_431$node))
 
-# make a list with an element for each node.  The element will 
+# make a list with an element for each node.  The element will
 # either be NULL, or it will be a list saying whether is a tip
 # and who its parent is, and the edge length above it.  We will
 # then write a simple recursion that starts at a tip and returns
@@ -472,13 +472,14 @@ for (i in seq_along(desc_from_431$parent)) {
   LL[[desc_from_431$node[i]]]$parent <- desc_from_431$parent[i]
   LL[[desc_from_431$node[i]]]$blength <- desc_from_431$branch.length[i]
 }
-LL[[431]]$blength <- 0;
-
-# here is a function that traces through the parents and returns 
+LL[[431]]$blength <- 0
+# here is a function that traces through the parents and returns
 # a vector of the branch lengths.  Then, all we have to do is
 # sum those up.
 recurs <- function(i) {
-  if (is.null(LL[[i]])) return(NA);
+  if (is.null(LL[[i]])) {
+    return(NA)
+  }
   if (i != 431) {
     d <- LL[[i]]$blength
     names(d) <- i
@@ -494,7 +495,13 @@ recurs <- function(i) {
 With that, we can now make get a vector of the cumulative branch lengths
 between every fall run haplotype and node 431:
 ```{r}
-fall_lengths <- lapply(1:nrow(desc_from_431), function(i) if (is.na(desc_from_431$label[i])) { return(NA);} else {return(sum(recurs(i)))} ) %>%
+fall_lengths <- lapply(1:nrow(desc_from_431), function(i) {
+  if (is.na(desc_from_431$label[i])) {
+    return(NA)
+  } else {
+    return(sum(recurs(i)))
+  }
+}) %>%
   unlist() %>%
   enframe() %>%
   filter(!is.na(value))
@@ -526,9 +533,9 @@ B2 <- 0.02704302
 
 So,
 ```{r}
-Ch <- (B1 + B2)/2
+Ch <- (B1 + B2) / 2
 
-# fraction of distance along chinook lineage since split with 
+# fraction of distance along chinook lineage since split with
 # common ancestor with coho before we
 # get to spring run lineage breaking off is:
 FractBeforeSpring <- B1 / Ch
@@ -585,24 +592,25 @@ dists_to_coho_tmp <- broom::tidy(chdist) %>%
 # number of "early" alleles (from Ssums above).
 hlineages <- Ssums %>%
   ungroup() %>%
-  mutate(item1 = ifelse(str_detect(haplo_name, "-a$"), str_c(Indiv, ".a"), str_c(Indiv, ".b")),
-         haplo_lineage = ifelse(NumSs < 125, "L", "E")) %>%
+  mutate(
+    item1 = ifelse(str_detect(haplo_name, "-a$"), str_c(Indiv, ".a"), str_c(Indiv, ".b")),
+    haplo_lineage = ifelse(NumSs < 125, "L", "E")
+  ) %>%
   select(item1, haplo_lineage)
 
 # join those on there
 dists_to_coho <- dists_to_coho_tmp %>%
   left_join(hlineages, by = "item1") %>%
   select(-item2)
-
 ```
 
 Now that we have those, let's just make a plot:
 ```{r}
 dtc_plot <- ggplot(dists_to_coho, aes(x = distance, fill = haplo_lineage)) +
   geom_histogram() +
-  facet_wrap(~ haplo_lineage, ncol = 1) +
+  facet_wrap(~haplo_lineage, ncol = 1) +
   scale_fill_manual(values = c(E = "gold", L = "blue"))
-  
+
 ggsave(dtc_plot, filename = "outputs/009/dtc_plot.pdf", width = 10, height = 7)
 
 dtc_plot
@@ -655,11 +663,11 @@ dfreqs <- haps_bi_lin %>%
   tally() %>%
   spread(key = anc_vs_derived, value = n, fill = 0) %>%
   mutate(dfreq = D / (A + D))
-  
+
 
 # also, get all the positions so we can put a rug in:
 posies <- tibble(x = unique(dfreqs$POS))
-  
+
 
 # now, run a smooth through that in a 50 Kb sliding window
 dsmooth <- dfreqs %>%
@@ -667,21 +675,23 @@ dsmooth <- dfreqs %>%
   do(as_tibble(ksmooth(.$POS, .$dfreq, bandwidth = 50e3, n.points = 10000)))
 
 # now, plot that
-dsmooth_plot <- ggplot(dsmooth, aes(x = x/1e6)) +
+dsmooth_plot <- ggplot(dsmooth, aes(x = x / 1e6)) +
   annotate("rect", xmin = 12.26, xmax = 12.29, ymin = -Inf, ymax = Inf, fill = "pink", alpha = 0.6) +
   geom_line(aes(y = y, colour = haplo_lineage)) +
   scale_x_continuous(breaks = scales::pretty_breaks(n = 25)) +
-  scale_colour_manual(values =  c(E = "gold", L = "blue")) +
+  scale_colour_manual(values = c(E = "gold", L = "blue")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
   xlab("Genome position on Chromosome 28 (Mb)") +
   ylab("Average frequency of derived alleles within 50 Kb windows") +
   theme_bw() +
   facet_wrap(~basin, ncol = 1) +
-  geom_rug(data = posies, size = 0.01) + 
-  theme(strip.background = element_blank(),
-        panel.border = element_rect(colour = "black")) +
+  geom_rug(data = posies, size = 0.01) +
+  theme(
+    strip.background = element_blank(),
+    panel.border = element_rect(colour = "black")
+  ) +
   guides(colour = guide_legend(title = "RoSA\nHaplotype\nLineage"))
-  
+
 
 ggsave(dsmooth_plot, filename = "outputs/009/ad_plot_faceted.pdf", width = 10, height = 6)
 dsmooth_plot
@@ -698,13 +708,14 @@ positions.  Let's just add those on as other lines.
 ```{r}
 dcomps <- dsmooth %>%
   spread(key = haplo_lineage, value = y) %>%
-  mutate(`E/L` = E / L,
-         `L/E` = L / E)
+  mutate(
+    `E/L` = E / L,
+    `L/E` = L / E
+  )
 
-dsmooth_plot + 
-  geom_line(data = dcomps, aes(y = `E/L`), colour = "red") + 
+dsmooth_plot +
+  geom_line(data = dcomps, aes(y = `E/L`), colour = "red") +
   geom_line(data = dcomps, aes(y = `L/E`), colour = "orange")
-  
 ```
 
 ## Polymorphisms vs substitutions
@@ -718,13 +729,17 @@ We will do this by counting up whether the alleles are reference or alt.
 ```{r}
 # first filter down to variants within the RoSA region
 rosa_snps_tmp <- haps_bi %>%
-  filter(POS >= 12260034, POS <= 12289484,
-         !is.na(anc_vs_derived))
+  filter(
+    POS >= 12260034, POS <= 12289484,
+    !is.na(anc_vs_derived)
+  )
 
 # then join on whether they are E or L lineage haplotypes
 rosa_snps <- hlineages %>%
-  mutate(Indiv = str_replace(item1, "\\.[ab]", ""),
-         haplo = ifelse(str_detect(item1, "\\.a"), "a", "b")) %>%
+  mutate(
+    Indiv = str_replace(item1, "\\.[ab]", ""),
+    haplo = ifelse(str_detect(item1, "\\.a"), "a", "b")
+  ) %>%
   select(-item1) %>%
   left_join(rosa_snps_tmp, ., by = c("Indiv", "haplo")) %>%
   mutate(ref_or_alt = ifelse(allele == REF, "REF", "ALT"))
@@ -733,7 +748,7 @@ rosa_snps <- hlineages %>%
 rosa_ad_freqs <- rosa_snps %>%
   count(POS, haplo_lineage, ref_or_alt) %>%
   group_by(POS) %>%
-  mutate(freq = n/sum(n)) %>%
+  mutate(freq = n / sum(n)) %>%
   mutate(category = case_when(
     haplo_lineage == "E" & ref_or_alt == "REF" ~ "E_reference",
     haplo_lineage == "E" & ref_or_alt == "ALT" ~ "E_alternate",
@@ -749,10 +764,12 @@ and we will do the same with blue (L and REF) and late-fall color (L and ALT).
 ```{r}
 freq_bars <- ggplot(rosa_ad_freqs, aes(x = factor(POS), y = freq, fill = category)) +
   geom_col() +
-  scale_fill_manual(values = c(E_reference = "gold",
-                               E_alternate = "#ffff99",
-                               L_reference = "blue",
-                               L_alternate = "#a6cee3"))
+  scale_fill_manual(values = c(
+    E_reference = "gold",
+    E_alternate = "#ffff99",
+    L_reference = "blue",
+    L_alternate = "#a6cee3"
+  ))
 
 ggsave(freq_bars, filename = "outputs/009/freq_bars.pdf", width = 12, height = 8)
 
@@ -777,10 +794,12 @@ rosa_ad_masked <- rosa_ad_freqs %>%
 
 freq_bars2 <- ggplot(rosa_ad_masked, aes(x = factor(POS), y = freq2, fill = category)) +
   geom_col() +
-  scale_fill_manual(values = c(E_reference = "gold",
-                               E_alternate = "#ffff99",
-                               L_reference = "blue",
-                               L_alternate = "#a6cee3"))
+  scale_fill_manual(values = c(
+    E_reference = "gold",
+    E_alternate = "#ffff99",
+    L_reference = "blue",
+    L_alternate = "#a6cee3"
+  ))
 
 ggsave(freq_bars2, filename = "outputs/009/freq_bars_substi.pdf", width = 12, height = 8)
 
@@ -829,9 +848,11 @@ vars_for_seqs <- rosa_ad_masked %>%
   arrange(POS, haplo_lineage, desc(n)) %>%
   group_by(POS, haplo_lineage) %>%
   slice(1) %>%
-  mutate(Indiv = ifelse(haplo_lineage == "E", "E-haplo-lineage", "L-haplo-lineage"),
-         haplo = "a")
-  
+  mutate(
+    Indiv = ifelse(haplo_lineage == "E", "E-haplo-lineage", "L-haplo-lineage"),
+    haplo = "a"
+  )
+
 
 # now insert into sequences
 dump <- ecaRbioinf::insert_variants_into_sequences(
@@ -840,8 +861,7 @@ dump <- ecaRbioinf::insert_variants_into_sequences(
   lo = 12260034,
   hi = 12289484,
   file = "intermediates/009/haplo-lineage-fixed-snps.fa"
-  )
-
+)
 ```
 
 Finally, put the coho in there and we should be ready to go to the next step.
@@ -924,10 +944,11 @@ In millions of years.
 # Make a figure with (a) and (b) for the supplement
 
 ```{r}
-tree_and_smooth <- cowplot::plot_grid(ccfinal, 
-          dsmooth_plot, 
-          nrow = 2, 
-          labels = c("A", "B"), rel_heights = c(.35, .65))
+tree_and_smooth <- cowplot::plot_grid(ccfinal,
+  dsmooth_plot,
+  nrow = 2,
+  labels = c("A", "B"), rel_heights = c(.35, .65)
+)
 
 ggsave(tree_and_smooth, filename = "outputs/009/tree-and-smooth.pdf", width = 10, height = 10)
 ```

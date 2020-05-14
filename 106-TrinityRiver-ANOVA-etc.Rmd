@@ -32,9 +32,11 @@ mean spawning dates of the all RoSA genotypes in Trinity River Hatchery
 rosa_data %>%
   group_by(rosa) %>%
   mutate(spawn_date = yday(COLLECTION_DATE)) %>%
-  summarise(mean_sp = round(mean(spawn_date),2),
-            sd_spawn = round(sd(spawn_date),2),
-            n_fish = n())
+  summarise(
+    mean_sp = round(mean(spawn_date), 2),
+    sd_spawn = round(sd(spawn_date), 2),
+    n_fish = n()
+  )
 ```
 
 All fish were spawned in `r rosa_data%>%mutate(cyear=year(COLLECTION_DATE))%>%distinct(cyear)`
@@ -43,10 +45,12 @@ All fish were spawned in `r rosa_data%>%mutate(cyear=year(COLLECTION_DATE))%>%di
 Start ANOVA analysis
 ```{r linear-regression-trh}
 rosa_stats <- rosa_data %>%
-  filter(rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL"))%>%
-  mutate(spawn_date = yday(COLLECTION_DATE),
-         rosa_f = factor(rosa, levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL"))) 
-lm1 <- lm(spawn_date~rosa_f, rosa_stats)
+  filter(rosa %in% c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL")) %>%
+  mutate(
+    spawn_date = yday(COLLECTION_DATE),
+    rosa_f = factor(rosa, levels = c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL"))
+  )
+lm1 <- lm(spawn_date ~ rosa_f, rosa_stats)
 anova(lm1)
 ```
 
@@ -59,17 +63,20 @@ check model assumptions
 ```{r}
 plot(lm1)
 e1 <- resid(lm1)
-hist(e1,main="Histogram of residuals") # not pretty, but acceptable in my opinion.
+hist(e1, main = "Histogram of residuals") # not pretty, but acceptable in my opinion.
 ```
 
 What about differences among genotypes variance?
 
 ```{r}
-rosa_stats %>% group_by(rosa_f) %>%
-  summarise(spawn_mean = mean(spawn_date),
-            spawn_sd = sd(spawn_date),
-            cv_spawn = 100*round(spawn_sd/spawn_mean,4),
-            n_fish = n())
+rosa_stats %>%
+  group_by(rosa_f) %>%
+  summarise(
+    spawn_mean = mean(spawn_date),
+    spawn_sd = sd(spawn_date),
+    cv_spawn = 100 * round(spawn_sd / spawn_mean, 4),
+    n_fish = n()
+  )
 ```
 
 ```{r}
@@ -81,24 +88,24 @@ Simulations to determine how big an issue the homoscedasticity violation is on t
 The standard deviation among EE and EL RoSA genotypes is very similar and probably isnt significantly different. Here I'll investigate the influence of differing SD between EL and LL on the distribution of P values.
 ```{r HvL-with-constant-n-sim-}
 nSims <- 10000
-h0 <-numeric(nSims)
-for(i in 1:nSims){ 
-x<-rnorm(n = 100, mean = 277, sd = 9.6) # represents mean and SD of HHHHHHHH RoSA 
-y<-rnorm(n = 100, mean = 311, sd = 17.3) #represents mean and SD of LLLLLLLL RoSA 
-z<-t.test(x,y, var.equal = T) 
-h0[i]<-z$p.value 
+h0 <- numeric(nSims)
+for (i in 1:nSims) {
+  x <- rnorm(n = 100, mean = 277, sd = 9.6) # represents mean and SD of HHHHHHHH RoSA
+  y <- rnorm(n = 100, mean = 311, sd = 17.3) # represents mean and SD of LLLLLLLL RoSA
+  z <- t.test(x, y, var.equal = T)
+  h0[i] <- z$p.value
 }
-hist(h0, main="Histogram of p-values with observed mean and variance, = n", xlab=("Observed p-value"), breaks=100)
-#now lets say that the HHHHHHHH RoSA had equivalent SD to EEEEEEEE (increasing SD of HHHHHHHH higher than observed)
+hist(h0, main = "Histogram of p-values with observed mean and variance, = n", xlab = ("Observed p-value"), breaks = 100)
+# now lets say that the HHHHHHHH RoSA had equivalent SD to EEEEEEEE (increasing SD of HHHHHHHH higher than observed)
 nSims <- 10000
-h0 <-numeric(nSims)
-for(i in 1:nSims){ 
-x<-rnorm(n = 100, mean = 277, sd = 17.3) # represents mean and SD of HHHHHHHH RoSA 
-y<-rnorm(n = 100, mean = 311, sd = 17.3) #represents mean and inflated SD of LLLLLLLL RoSA 
-z<-t.test(x,y, var.equal = T) 
-h0[i]<-z$p.value 
+h0 <- numeric(nSims)
+for (i in 1:nSims) {
+  x <- rnorm(n = 100, mean = 277, sd = 17.3) # represents mean and SD of HHHHHHHH RoSA
+  y <- rnorm(n = 100, mean = 311, sd = 17.3) # represents mean and inflated SD of LLLLLLLL RoSA
+  z <- t.test(x, y, var.equal = T)
+  h0[i] <- z$p.value
 }
-hist(h0, main="Histogram of p-values with observed mean and inflated H variance, = n", xlab=("Observed p-value"), breaks=100)
+hist(h0, main = "Histogram of p-values with observed mean and inflated H variance, = n", xlab = ("Observed p-value"), breaks = 100)
 ```
 
 With equivalent samples sizes among EL and LL the influence of differing SD among genotypes does not influence the distribution of P-values. All comparisons would be statistically significant regardless of the observed differences in SD among genotypes.
@@ -107,24 +114,24 @@ Now lets see what happens when differences in sample size and SD are considered 
 
 ```{r HvL-with-variable-n-sim-}
 nSims <- 10000
-h0 <-numeric(nSims)
-for(i in 1:nSims){ 
-x<-rnorm(n = 100, mean = 277, sd = 9.6) # represents mean and SD of HHHHHHHH RoSA, but same n as LLLLLLLL
-y<-rnorm(n = 100, mean = 311, sd = 17.3) #represents mean and SD of LLLLLLLL RoSA 
-z<-t.test(x,y, var.equal = T) 
-h0[i]<-z$p.value 
+h0 <- numeric(nSims)
+for (i in 1:nSims) {
+  x <- rnorm(n = 100, mean = 277, sd = 9.6) # represents mean and SD of HHHHHHHH RoSA, but same n as LLLLLLLL
+  y <- rnorm(n = 100, mean = 311, sd = 17.3) # represents mean and SD of LLLLLLLL RoSA
+  z <- t.test(x, y, var.equal = T)
+  h0[i] <- z$p.value
 }
-hist(h0, main="Histogram of p-values with observed mean and variance, = n", xlab=("Observed p-value"), breaks=100)
-#now lets say that the HHHHHHHH RoSA had equivalent SD to EEEEEEEE (increasing SD of HHHHHHHH higher than observed)
+hist(h0, main = "Histogram of p-values with observed mean and variance, = n", xlab = ("Observed p-value"), breaks = 100)
+# now lets say that the HHHHHHHH RoSA had equivalent SD to EEEEEEEE (increasing SD of HHHHHHHH higher than observed)
 nSims <- 10000
-h0 <-numeric(nSims)
-for(i in 1:nSims){ 
-x<-rnorm(n = 30, mean = 277, sd = 9.6) # represents mean and SD of HHHHHHHH RoSA 
-y<-rnorm(n = 100, mean = 311, sd = 17.3) #represents mean and inflated SD of LLLLLLLL RoSA 
-z<-t.test(x,y, var.equal = T) 
-h0[i]<-z$p.value 
+h0 <- numeric(nSims)
+for (i in 1:nSims) {
+  x <- rnorm(n = 30, mean = 277, sd = 9.6) # represents mean and SD of HHHHHHHH RoSA
+  y <- rnorm(n = 100, mean = 311, sd = 17.3) # represents mean and inflated SD of LLLLLLLL RoSA
+  z <- t.test(x, y, var.equal = T)
+  h0[i] <- z$p.value
 }
-hist(h0, main="Histogram of p-values with observed mean, variance and unequal n", xlab=("Observed p-value"), breaks=100)
+hist(h0, main = "Histogram of p-values with observed mean, variance and unequal n", xlab = ("Observed p-value"), breaks = 100)
 ```
 
 Even with the difference in SD and sample size it doesn't appear that those differences have a strong effect on analysing the difference among RoSA EL and LL spawn timing.
@@ -137,37 +144,43 @@ Data from appendix G in Hearsey 2011
 gonadosomatic index = drained gonad weight / (total mass - drained gonad weight)
 
 ```{r}
-gsi_dat <- read.csv("./data/106-hearsey_thesis_appendixG_GSI_spawn_data.csv",strip.white=TRUE, sep = ",")
-
-gsi_dat <- gsi_dat %>% 
-  rename(id = 1,
-         Date = 2,
-         Run = 3, 
-         Sex = 4,
-         Total_Mass_kg = 5,
-         FL_mm = 6, 
-         Gonad_gm = 7, 
-         Drain_gonad_gm = 8,
-         NWF = 9,
-         Fecundity = 10)
+gsi_dat <- read.csv("./data/106-hearsey_thesis_appendixG_GSI_spawn_data.csv", strip.white = TRUE, sep = ",")
 
 gsi_dat <- gsi_dat %>%
-  mutate(drained_gonad = Drain_gonad_gm/1000,
+  rename(
+    id = 1,
+    Date = 2,
+    Run = 3,
+    Sex = 4,
+    Total_Mass_kg = 5,
+    FL_mm = 6,
+    Gonad_gm = 7,
+    Drain_gonad_gm = 8,
+    NWF = 9,
+    Fecundity = 10
+  )
+
+gsi_dat <- gsi_dat %>%
+  mutate(
+    drained_gonad = Drain_gonad_gm / 1000,
     gonadSI = drained_gonad / (Total_Mass_kg - drained_gonad),
     sample_date = as.Date(Date, format = "%m/%d/%Y"),
-    spawn_year = year(sample_date)) 
+    spawn_year = year(sample_date)
+  )
 ```
 
 Make a summary table for each year
 ```{r}
 gsi_summary_table <- gsi_dat %>%
   rename(Sex = 4) %>%
-  group_by(spawn_year,Run,Sex) %>%
-  summarise(GSI_spawn_mean = round(mean(gonadSI),3),
-            GSI_spawn_SD = round(sd(gonadSI),3),
-            GSI_spawn_min = round(min(gonadSI),3),
-            GSI_spawn_max = round(max(gonadSI),3),
-            GSI_spawn_n = round(n(),3))
+  group_by(spawn_year, Run, Sex) %>%
+  summarise(
+    GSI_spawn_mean = round(mean(gonadSI), 3),
+    GSI_spawn_SD = round(sd(gonadSI), 3),
+    GSI_spawn_min = round(min(gonadSI), 3),
+    GSI_spawn_max = round(max(gonadSI), 3),
+    GSI_spawn_n = round(n(), 3)
+  )
 gsi_summary_table
 ```
 
@@ -176,43 +189,48 @@ make the supplemental figure.
 fig_dat <- gsi_dat %>%
   rename(ID = 1) %>%
   dplyr::select(ID, sample_date, gonadSI, Run) %>%
-  mutate(cday = yday(sample_date),
-         cyear = year(sample_date)) %>% 
+  mutate(
+    cday = yday(sample_date),
+    cyear = year(sample_date)
+  ) %>%
   filter(!is.na(gonadSI))
 est_rosa <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
 est_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
-est_gsi <- read_rds("./outputs/101/RoSA-klamath-estuary-rubias-assignments.rds") %>% 
-  mutate(Indiv = gsub("chinook","CH", indiv))
+est_gsi <- read_rds("./outputs/101/RoSA-klamath-estuary-rubias-assignments.rds") %>%
+  mutate(Indiv = gsub("chinook", "CH", indiv))
 est_gt_meta <- left_join(est_rosa, est_meta, by = c("NMFS_DNA_ID" = "NMFS ID"))
-est_final <- est_gsi %>% 
-  dplyr::select(Indiv,repunit) %>%
-  left_join(est_gt_meta, ., "Indiv") %>% 
-  filter(repunit == "TrinityRiver")  %>%
+est_final <- est_gsi %>%
+  dplyr::select(Indiv, repunit) %>%
+  left_join(est_gt_meta, ., "Indiv") %>%
+  filter(repunit == "TrinityRiver") %>%
   mutate(gonadSI = gsi) %>%
   filter(sex == "f") %>%
   dplyr::select(Indiv, julian, year, gonadSI, rosa) %>%
   rename(ID = Indiv, cday = julian, cyear = year, Run = rosa)
 fig2plot <- fig_dat %>%
-  dplyr::select(Run, cday, cyear, gonadSI) %>% 
+  dplyr::select(Run, cday, cyear, gonadSI) %>%
   mutate(Run = paste0(str_trim(Run), "_TRH")) %>%
   bind_rows(., est_final)
-fig2plot %>% filter(!str_detect(Run,"\\?")) %>%
-  mutate(Run = factor(Run,levels=c("EEEEEEEE","HHHHHHHH","LLLLLLLL","spring_TRH","fall_TRH"))) %>%
-  ggplot(., aes(x=cday,y=gonadSI, colour=Run)) +
-  geom_point(alpha=0.75) +
+fig2plot %>%
+  filter(!str_detect(Run, "\\?")) %>%
+  mutate(Run = factor(Run, levels = c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL", "spring_TRH", "fall_TRH"))) %>%
+  ggplot(., aes(x = cday, y = gonadSI, colour = Run)) +
+  geom_point(alpha = 0.75) +
   xlab(label = "Estuary sampling date") +
   ylab(label = "Gonadosomatic Index") +
-  scale_fill_discrete(name = "",labels=c("EE","EL","LL","spring_TRH","fall_TRH")) + 
-  scale_colour_manual(name = "",values=c("gold", "tan2", "blue","gold4","blue4"),labels=c("EE","EL","LL","spring_TRH","fall_TRH")) +
+  scale_fill_discrete(name = "", labels = c("EE", "EL", "LL", "spring_TRH", "fall_TRH")) +
+  scale_colour_manual(name = "", values = c("gold", "tan2", "blue", "gold4", "blue4"), labels = c("EE", "EL", "LL", "spring_TRH", "fall_TRH")) +
   theme_bw() +
-scale_x_continuous(limits = c(121,335),breaks=c(121,152,182,213,244,274,305, 335),labels = c("1 May", "1 Jun","1 Jul","1 Aug","1 Sep", "1 Oct","1 Nov","1 Dec"))+
-scale_y_continuous(breaks=c(0,0.05,0.10,0.15,0.20,0.25),labels = c(0,0.05,0.10,0.15,0.20,0.25), limits=c(0,0.275))+
-    theme(axis.text = element_text(size = 12, family="serif"),
-        axis.title = element_text(size = 12, family="serif"),axis.text.x = element_text(angle = 45, hjust = 1, family="serif"), 
-        strip.background = element_blank(),
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-        axis.title.x = element_blank(), strip.text.x = element_text(size=14, family="serif"),plot.margin = unit(c(0, .2, 0.5, 0.2), "lines")) + 
-  facet_grid(.~cyear)
+  scale_x_continuous(limits = c(121, 335), breaks = c(121, 152, 182, 213, 244, 274, 305, 335), labels = c("1 May", "1 Jun", "1 Jul", "1 Aug", "1 Sep", "1 Oct", "1 Nov", "1 Dec")) +
+  scale_y_continuous(breaks = c(0, 0.05, 0.10, 0.15, 0.20, 0.25), labels = c(0, 0.05, 0.10, 0.15, 0.20, 0.25), limits = c(0, 0.275)) +
+  theme(
+    axis.text = element_text(size = 12, family = "serif"),
+    axis.title = element_text(size = 12, family = "serif"), axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"),
+    strip.background = element_blank(),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    axis.title.x = element_blank(), strip.text.x = element_text(size = 14, family = "serif"), plot.margin = unit(c(0, .2, 0.5, 0.2), "lines")
+  ) +
+  facet_grid(. ~ cyear)
 ggsave(filename = "outputs/106/trh-gsi-plot.pdf", width = 6, height = 4)
 ```
 
@@ -222,29 +240,37 @@ ggsave(filename = "outputs/106/trh-gsi-plot.pdf", width = 6, height = 4)
 ```{r}
 rosa_data %>%
   mutate(coll_day = yday(COLLECTION_DATE)) %>%
-  filter(rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL")) %>%
-ggplot(.,aes(x = coll_day,fill = rosa)) + 
-  geom_bar(stat = "count", width = 1,position = "dodge") +
+  filter(rosa %in% c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL")) %>%
+  ggplot(., aes(x = coll_day, fill = rosa)) +
+  geom_bar(stat = "count", width = 1, position = "dodge") +
   xlab(label = "Spawning date") +
   ylab(label = "Count") +
   theme_bw() +
- facet_grid(rosa ~ .) +
-  theme(axis.text = element_text(size = 12, family = "serif"),
-        axis.title = element_text(size = 14, family = "serif"), 
-        axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"), 
-        strip.background = element_blank(),
-        legend.position = "top",
-        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-         strip.text.x = element_text(size = 14, family = "serif"),
-        strip.text.y = element_blank()) +
-  scale_x_continuous(limits = c(244,365), breaks = c(245,275,306,335,365), 
-                     labels = c("1 Sep", "1 Oct","1 Nov","1 Dec", "1 Jan")) +
-  scale_fill_manual(values = c("gold","tan2","blue"),
-                     breaks = c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL"),
-                         labels = c("EE", "EL", "LL"),
-                     name="RoSA genotype") +
-  geom_rect(inherit.aes = FALSE,aes(xmin = 285, xmax = 297,ymin = 0, ymax = Inf),
-            fill = 'grey85') # draw spawning hiatus period
+  facet_grid(rosa ~ .) +
+  theme(
+    axis.text = element_text(size = 12, family = "serif"),
+    axis.title = element_text(size = 14, family = "serif"),
+    axis.text.x = element_text(angle = 45, hjust = 1, family = "serif"),
+    strip.background = element_blank(),
+    legend.position = "top",
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    strip.text.x = element_text(size = 14, family = "serif"),
+    strip.text.y = element_blank()
+  ) +
+  scale_x_continuous(
+    limits = c(244, 365), breaks = c(245, 275, 306, 335, 365),
+    labels = c("1 Sep", "1 Oct", "1 Nov", "1 Dec", "1 Jan")
+  ) +
+  scale_fill_manual(
+    values = c("gold", "tan2", "blue"),
+    breaks = c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL"),
+    labels = c("EE", "EL", "LL"),
+    name = "RoSA genotype"
+  ) +
+  geom_rect(
+    inherit.aes = FALSE, aes(xmin = 285, xmax = 297, ymin = 0, ymax = Inf),
+    fill = "grey85"
+  ) # draw spawning hiatus period
 
 ggsave(filename = "outputs/106/trh-spawn-date-plot.pdf", width = 6, height = 4)
 ```

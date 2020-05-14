@@ -32,9 +32,9 @@ rosa_data <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
 
 estuary_meta <- read_csv("./data/102-Klamath-entryDATA_withNMFSID.csv")
 
-rosa_meta <- left_join(estuary_meta, rosa_data, by=c("NMFS ID" = "NMFS_DNA_ID")) %>%
+rosa_meta <- left_join(estuary_meta, rosa_data, by = c("NMFS ID" = "NMFS_DNA_ID")) %>%
   dplyr::select(-ID) %>%
-  rename(NMFS_DNA_ID = 'NMFS ID') %>%
+  rename(NMFS_DNA_ID = "NMFS ID") %>%
   dplyr::select(NMFS_DNA_ID, rosa, everything())
 ```
 
@@ -42,10 +42,12 @@ Remove all samples with ANY missing data. And remove the recombinant genotypes.
 
 ```{r}
 stat_data <- rosa_meta %>%
-  rename(fatness=drywet) %>%
-  filter(rosa %in% c("EEEEEEEE","HHHHHHHH","LLLLLLLL")) %>%
-  mutate(log_est = log(julian),
-         year_f = factor(year, levels=c("2009","2010")))
+  rename(fatness = drywet) %>%
+  filter(rosa %in% c("EEEEEEEE", "HHHHHHHH", "LLLLLLLL")) %>%
+  mutate(
+    log_est = log(julian),
+    year_f = factor(year, levels = c("2009", "2010"))
+  )
 ```
 
 Let's say that early-homozygote RoSA increase to 5% greater than late-homozygote RoSA. In this case each E allele increases fatness by 0.025 units (simple additive model). This is the assumption we are making to start. I'll vary the additive allele effect in a more systematic way later, but I just want to get the code working for right now.
@@ -60,91 +62,104 @@ I'll create a balanced number of fish per homozygous genotype (n=100)and half th
 Calculate the mean and sd for log estuary date and NWF by sex and genotype
 ```{r mean-and-SD-calcs-by-sex-and-geno}
 stat_data %>%
-  group_by(rosa,sex) %>%
-  summarise(mean_fat = mean(fatness),
-            sd_fat = sd(fatness),
-            mean_logest = mean(log_est),
-            sd_logest = sd(log_est))
+  group_by(rosa, sex) %>%
+  summarise(
+    mean_fat = mean(fatness),
+    sd_fat = sd(fatness),
+    mean_logest = mean(log_est),
+    sd_logest = sd(log_est)
+  )
 ```
 
 ## Creating fake EE genotype data
 
 ```{r linear-regression-estimates-for-EE}
-stat_data %>% filter(rosa=="EEEEEEEE") %>%
-lm(fatness~log_est+sex+year_f,data=.)
+stat_data %>%
+  filter(rosa == "EEEEEEEE") %>%
+  lm(fatness ~ log_est + sex + year_f, data = .)
 ```
 
 
 ```{r creating-fake-data-EE-genotype}
-pop_size=100
-int= 0.85635
-log_esteffect =  -0.10850
-sex_effect = 0.02683
-allele_effect = 0
-sim_early <- tibble(sex_fake = rep(c(1,0),each=pop_size/2), # 1 =male
-                    logest_fake = rnorm(n=pop_size,mean=5.03,sd=0.112),
-                    eps_male = rnorm(n=pop_size, mean = 0, sd = 0.052), 
-                    eps_female = rnorm(n=pop_size, mean = 0, sd = 0.051),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    fat_fake = fat_var + 2*allele_effect ,
-                    RoSA ="EE")
+pop_size <- 100
+int <- 0.85635
+log_esteffect <- -0.10850
+sex_effect <- 0.02683
+allele_effect <- 0
+sim_early <- tibble(
+  sex_fake = rep(c(1, 0), each = pop_size / 2), # 1 =male
+  logest_fake = rnorm(n = pop_size, mean = 5.03, sd = 0.112),
+  eps_male = rnorm(n = pop_size, mean = 0, sd = 0.052),
+  eps_female = rnorm(n = pop_size, mean = 0, sd = 0.051),
+  fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+  fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+  fat_fake = fat_var + 2 * allele_effect,
+  RoSA = "EE"
+)
 ```
 
 ## creating fake data for EL genotype
 ```{r linear-regression-estimates-for-EL}
-stat_data %>% filter(rosa=="HHHHHHHH") %>%
-lm(fatness~log_est+sex+year_f,data=.)
+stat_data %>%
+  filter(rosa == "HHHHHHHH") %>%
+  lm(fatness ~ log_est + sex + year_f, data = .)
 ```
 
 
 ```{r}
-pop_size=100
-int= 0.003811
-log_esteffect =  0.055063
-sex_effect = 0.044197
+pop_size <- 100
+int <- 0.003811
+log_esteffect <- 0.055063
+sex_effect <- 0.044197
 
 
-sim_het <- tibble(sex_fake = rep(c(1,0),each=pop_size/4), # 1 =male
-                    logest_fake = rnorm(n=pop_size/2,mean=5.27,sd=0.079),
-                    eps_male = rnorm(n=pop_size/2, mean = 0, sd = 0.049),
-                    eps_female = rnorm(n=pop_size/2, mean = 0, sd = 0.038),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    fat_fake = fat_var + allele_effect ,
-                    RoSA ="EL")
+sim_het <- tibble(
+  sex_fake = rep(c(1, 0), each = pop_size / 4), # 1 =male
+  logest_fake = rnorm(n = pop_size / 2, mean = 5.27, sd = 0.079),
+  eps_male = rnorm(n = pop_size / 2, mean = 0, sd = 0.049),
+  eps_female = rnorm(n = pop_size / 2, mean = 0, sd = 0.038),
+  fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+  fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+  fat_fake = fat_var + allele_effect,
+  RoSA = "EL"
+)
 ```
 
 ## creating fake data for LL genotype
 
 ```{r linear-regression-estimates-for-LL}
-stat_data %>% filter(rosa=="LLLLLLLL") %>%
-lm(fatness~log_est+sex+year_f,data=.)
+stat_data %>%
+  filter(rosa == "LLLLLLLL") %>%
+  lm(fatness ~ log_est + sex + year_f, data = .)
 ```
 
 
 ```{r fake-data-for-LL-genotype}
-int= 1.1771
-log_esteffect =  -0.16408
-sex_effect = 0.03727
+int <- 1.1771
+log_esteffect <- -0.16408
+sex_effect <- 0.03727
 
 
-sim_late <- tibble(sex_fake = rep(c(1,0),each=pop_size/2), # 1 =male
-                    logest_fake = rnorm(n=pop_size,mean=5.54,sd=0.090),
-                    eps_male = rnorm(n=pop_size, mean = 0, sd = 0.055), 
-                    eps_female = rnorm(n=pop_size, mean = 0, sd = 0.036),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    fat_fake = fat_var + 2*allele_effect ,
-                    RoSA ="LL")
+sim_late <- tibble(
+  sex_fake = rep(c(1, 0), each = pop_size / 2), # 1 =male
+  logest_fake = rnorm(n = pop_size, mean = 5.54, sd = 0.090),
+  eps_male = rnorm(n = pop_size, mean = 0, sd = 0.055),
+  eps_female = rnorm(n = pop_size, mean = 0, sd = 0.036),
+  fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+  fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+  fat_fake = fat_var + 2 * allele_effect,
+  RoSA = "LL"
+)
 ```
 
 ## Combine the three fake data sets and plot it
 ```{r combine-sim-data-and-plot-it}
-sim_data <- bind_rows(sim_early,sim_het,sim_late) %>%
-  mutate(RoSA = factor(RoSA,levels = c("EE","EL","LL")))
+sim_data <- bind_rows(sim_early, sim_het, sim_late) %>%
+  mutate(RoSA = factor(RoSA, levels = c("EE", "EL", "LL")))
 
-ggplot(sim_data, aes(x=logest_fake, y=fat_fake,colour=RoSA)) +geom_point()+facet_grid(sex_fake~.)
+ggplot(sim_data, aes(x = logest_fake, y = fat_fake, colour = RoSA)) +
+  geom_point() +
+  facet_grid(sex_fake ~ .)
 ```
 
 ## likelihood ratio test. is there evidence for a significant difference in intercept of fat level among the 3 genotypes?
@@ -153,7 +168,7 @@ library(nlme)
 
 power_M0 <- gls(fat_fake ~ 1 + logest_fake + sex_fake, data = sim_data) # remove the year factor, simulate a single year of data.
 
-power_mm0 <- lme(fat_fake ~ 1 + logest_fake + sex_fake, random = ~1 | RoSA, method = "REML", data = sim_data) #random intercept model
+power_mm0 <- lme(fat_fake ~ 1 + logest_fake + sex_fake, random = ~ 1 | RoSA, method = "REML", data = sim_data) # random intercept model
 
 anova(power_M0, power_mm0)$"p-value"[2]
 ```
@@ -161,7 +176,8 @@ anova(power_M0, power_mm0)$"p-value"[2]
 Not even close.
 
 ```{r simulated-data-diffs-RoSA}
-ggplot(sim_data, aes(x=RoSA,y=fat_fake)) + geom_boxplot()
+ggplot(sim_data, aes(x = RoSA, y = fat_fake)) +
+  geom_boxplot()
 ```
 
 
@@ -171,66 +187,71 @@ Combine the above code into a function so we can use run a simulation analyses 1
 
 ```{r fat_power}
 fat_power <- function(pop_size, allele_effect) {
-  
-pop_size=100
-allele_effect = allele_effect
+  pop_size <- 100
+  allele_effect <- allele_effect
 
-# EE specific effect sizes from linear regression
-int= 0.85635
-log_esteffect =  -0.10850
-sex_effect = 0.02683
-sim_early <- tibble(sex_fake = rep(c(1,0),each=pop_size/2), # 1 =male
-                    logest_fake = rnorm(n=pop_size,mean=5.03,sd=0.112),
-                    eps_male = rnorm(n=pop_size, mean = 0, sd = 0.052), 
-                    eps_female = rnorm(n=pop_size, mean = 0, sd = 0.051),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    fat_fake = fat_var + 2*allele_effect ,
-                    RoSA ="EE")
+  # EE specific effect sizes from linear regression
+  int <- 0.85635
+  log_esteffect <- -0.10850
+  sex_effect <- 0.02683
+  sim_early <- tibble(
+    sex_fake = rep(c(1, 0), each = pop_size / 2), # 1 =male
+    logest_fake = rnorm(n = pop_size, mean = 5.03, sd = 0.112),
+    eps_male = rnorm(n = pop_size, mean = 0, sd = 0.052),
+    eps_female = rnorm(n = pop_size, mean = 0, sd = 0.051),
+    fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+    fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+    fat_fake = fat_var + 2 * allele_effect,
+    RoSA = "EE"
+  )
 
-# EL specific effect sizes from linear regression
-int= 0.003811
-log_esteffect =  0.055063
-sex_effect = 0.044197
+  # EL specific effect sizes from linear regression
+  int <- 0.003811
+  log_esteffect <- 0.055063
+  sex_effect <- 0.044197
 
 
-sim_het <- tibble(sex_fake = rep(c(1,0),each=pop_size/4), # 1 =male
-                    logest_fake = rnorm(n=pop_size/2,mean=5.27,sd=0.079),
-                    eps_male = rnorm(n=pop_size/2, mean = 0, sd = 0.049),
-                    eps_female = rnorm(n=pop_size/2, mean = 0, sd = 0.038),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    fat_fake = fat_var + allele_effect ,
-                    RoSA ="EL")
+  sim_het <- tibble(
+    sex_fake = rep(c(1, 0), each = pop_size / 4), # 1 =male
+    logest_fake = rnorm(n = pop_size / 2, mean = 5.27, sd = 0.079),
+    eps_male = rnorm(n = pop_size / 2, mean = 0, sd = 0.049),
+    eps_female = rnorm(n = pop_size / 2, mean = 0, sd = 0.038),
+    fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+    fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+    fat_fake = fat_var + allele_effect,
+    RoSA = "EL"
+  )
 
-# LL specific effect sizes from linear regression
-int= 1.1771
-log_esteffect =  -0.16408
-sex_effect = 0.03727
+  # LL specific effect sizes from linear regression
+  int <- 1.1771
+  log_esteffect <- -0.16408
+  sex_effect <- 0.03727
 
-sim_late <- tibble(sex_fake = rep(c(1,0),each=pop_size/2), # 1 =male
-                    logest_fake = rnorm(n=pop_size,mean=5.54,sd=0.090),
-                    eps_male = rnorm(n=pop_size, mean = 0, sd = 0.055), 
-                    eps_female = rnorm(n=pop_size, mean = 0, sd = 0.036),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_fake = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    RoSA ="LL")
+  sim_late <- tibble(
+    sex_fake = rep(c(1, 0), each = pop_size / 2), # 1 =male
+    logest_fake = rnorm(n = pop_size, mean = 5.54, sd = 0.090),
+    eps_male = rnorm(n = pop_size, mean = 0, sd = 0.055),
+    eps_female = rnorm(n = pop_size, mean = 0, sd = 0.036),
+    fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+    fat_fake = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+    RoSA = "LL"
+  )
 
-sim_data <- bind_rows(sim_early,sim_het,sim_late) %>%
-  mutate(RoSA = factor(RoSA,levels = c("EE","EL","LL")))
+  sim_data <- bind_rows(sim_early, sim_het, sim_late) %>%
+    mutate(RoSA = factor(RoSA, levels = c("EE", "EL", "LL")))
 
-power_M0 <- gls(fat_fake ~ 1 + logest_fake + sex_fake, data = sim_data) # remove the year factor, simulate a single year of data.
+  power_M0 <- gls(fat_fake ~ 1 + logest_fake + sex_fake, data = sim_data) # remove the year factor, simulate a single year of data.
 
-power_mm0 <- lme(fat_fake ~ 1 + logest_fake + sex_fake, random = ~1 | RoSA, method = "REML", data = sim_data) #random intercept model
+  power_mm0 <- lme(fat_fake ~ 1 + logest_fake + sex_fake, random = ~ 1 | RoSA, method = "REML", data = sim_data) # random intercept model
 
-p_val <- anova(power_M0, power_mm0)$"p-value"[2]
+  p_val <- anova(power_M0, power_mm0)$"p-value"[2]
 
-p_val
+  p_val
 }
 ```
 
 ```{r run-simulation-and-calculate-power}
-rep_outp <- replicate(1e3,fat_power(allele_effect = 0.025,pop_size = 100))
+rep_outp <- replicate(1e3, fat_power(allele_effect = 0.025, pop_size = 100))
 
 table(rep_outp <= 0.05)
 ```
@@ -243,7 +264,7 @@ power_table <- tibble(
   allele_effect = seq(0.025, 0.05, by = 0.005)
 ) %>%
   mutate(power = map_dbl(allele_effect, function(allele_effect) {
-    ps <- replicate(1e3, fat_power(allele_effect = allele_effect,pop_size = 100))
+    ps <- replicate(1e3, fat_power(allele_effect = allele_effect, pop_size = 100))
     mean(ps < alpha)
   }))
 
@@ -270,55 +291,60 @@ yield significant effects of RoSA on fatness) and then plot the first four that 
 
 Here is a function to make simulated data.
 ```{r}
-fat_fake_data <- function(allele_effect,pop_size) {
-  
-  pop_size=100
-  allele_effect = allele_effect
-  
+fat_fake_data <- function(allele_effect, pop_size) {
+  pop_size <- 100
+  allele_effect <- allele_effect
+
   # EE specific effect sizes from linear regression
-  int= 0.85635
-  log_esteffect =  -0.10850
-  sex_effect = 0.02683
-  sim_early <- tibble(sex_fake = rep(c(1,0),each=pop_size/2), # 1 =male
-                      logest_fake = rnorm(n=pop_size,mean=5.03,sd=0.112),
-                      eps_male = rnorm(n=pop_size, mean = 0, sd = 0.052), 
-                      eps_female = rnorm(n=pop_size, mean = 0, sd = 0.051),
-                      fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                      fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                      fat_fake = fat_var + 2*allele_effect ,
-                      RoSA ="EE")
-  
+  int <- 0.85635
+  log_esteffect <- -0.10850
+  sex_effect <- 0.02683
+  sim_early <- tibble(
+    sex_fake = rep(c(1, 0), each = pop_size / 2), # 1 =male
+    logest_fake = rnorm(n = pop_size, mean = 5.03, sd = 0.112),
+    eps_male = rnorm(n = pop_size, mean = 0, sd = 0.052),
+    eps_female = rnorm(n = pop_size, mean = 0, sd = 0.051),
+    fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+    fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+    fat_fake = fat_var + 2 * allele_effect,
+    RoSA = "EE"
+  )
+
   # EL specific effect sizes from linear regression
-  int= 0.003811
-  log_esteffect =  0.055063
-  sex_effect = 0.044197
-  
-  
-  sim_het <- tibble(sex_fake = rep(c(1,0),each=pop_size/4), # 1 =male
-                    logest_fake = rnorm(n=pop_size/2,mean=5.27,sd=0.079),
-                    eps_male = rnorm(n=pop_size/2, mean = 0, sd = 0.049),
-                    eps_female = rnorm(n=pop_size/2, mean = 0, sd = 0.038),
-                    fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                    fat_var = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                    fat_fake = fat_var + allele_effect ,
-                    RoSA ="EL")
-  
-  
+  int <- 0.003811
+  log_esteffect <- 0.055063
+  sex_effect <- 0.044197
+
+
+  sim_het <- tibble(
+    sex_fake = rep(c(1, 0), each = pop_size / 4), # 1 =male
+    logest_fake = rnorm(n = pop_size / 2, mean = 5.27, sd = 0.079),
+    eps_male = rnorm(n = pop_size / 2, mean = 0, sd = 0.049),
+    eps_female = rnorm(n = pop_size / 2, mean = 0, sd = 0.038),
+    fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+    fat_var = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+    fat_fake = fat_var + allele_effect,
+    RoSA = "EL"
+  )
+
+
   # LL specific effect sizes from linear regression
-  int= 1.1771
-  log_esteffect =  -0.16408
-  sex_effect = 0.03727
-  
-  sim_late <- tibble(sex_fake = rep(c(1,0),each=pop_size/2), # 1 =male
-                     logest_fake = rnorm(n=pop_size,mean=5.54,sd=0.090),
-                     eps_male = rnorm(n=pop_size, mean = 0, sd = 0.055), 
-                     eps_female = rnorm(n=pop_size, mean = 0, sd = 0.036),
-                     fat_est = int + log_esteffect*logest_fake + sex_effect*sex_fake,
-                     fat_fake = ifelse(sex_fake==1, fat_est+eps_male, fat_est+eps_female),
-                     RoSA ="LL")
-  
-  sim_data <- bind_rows(sim_early,sim_het,sim_late) %>%
-    mutate(RoSA = factor(RoSA,levels = c("EE","EL","LL")))
+  int <- 1.1771
+  log_esteffect <- -0.16408
+  sex_effect <- 0.03727
+
+  sim_late <- tibble(
+    sex_fake = rep(c(1, 0), each = pop_size / 2), # 1 =male
+    logest_fake = rnorm(n = pop_size, mean = 5.54, sd = 0.090),
+    eps_male = rnorm(n = pop_size, mean = 0, sd = 0.055),
+    eps_female = rnorm(n = pop_size, mean = 0, sd = 0.036),
+    fat_est = int + log_esteffect * logest_fake + sex_effect * sex_fake,
+    fat_fake = ifelse(sex_fake == 1, fat_est + eps_male, fat_est + eps_female),
+    RoSA = "LL"
+  )
+
+  sim_data <- bind_rows(sim_early, sim_het, sim_late) %>%
+    mutate(RoSA = factor(RoSA, levels = c("EE", "EL", "LL")))
   sim_data
 }
 ```
@@ -330,7 +356,7 @@ sex_names <- list(
   "1" = "Male"
 )
 
-plot_labeller <- function(variable,value){
+plot_labeller <- function(variable, value) {
   return(sex_names[value])
 }
 ```
@@ -338,14 +364,19 @@ plot_labeller <- function(variable,value){
 And we also want a function that returns a ggplot
 ```{r simulated-data-graph-rep-1}
 ggplot_fake_fat_data <- function(dat2plot) {
-  ggplot(dat2plot, aes(x=exp(logest_fake),y=fat_fake,colour=RoSA)) + geom_point()+
-  scale_y_continuous(name="Simulated Fatness", limits=c(0.15,.6))+
-  scale_x_continuous(name = "Estuary sampling date", limits=c(121,305), breaks=c(121,152,182,213,244,274),
-                     labels = c("May-01","June-01","July-01","Aug-01","Sept-01","Oct-01"))+
-  theme_bw()+
-  theme(axis.text.x=element_text(angle = 45, hjust = 1,size=12),
-        strip.background =element_blank()) +
-  facet_grid(.~factor(sex_fake), labeller = plot_labeller)
+  ggplot(dat2plot, aes(x = exp(logest_fake), y = fat_fake, colour = RoSA)) +
+    geom_point() +
+    scale_y_continuous(name = "Simulated Fatness", limits = c(0.15, .6)) +
+    scale_x_continuous(
+      name = "Estuary sampling date", limits = c(121, 305), breaks = c(121, 152, 182, 213, 244, 274),
+      labels = c("May-01", "June-01", "July-01", "Aug-01", "Sept-01", "Oct-01")
+    ) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+      strip.background = element_blank()
+    ) +
+    facet_grid(. ~ factor(sex_fake), labeller = plot_labeller)
 }
 ```
 
@@ -356,10 +387,8 @@ power_M1_func <- function(dat2plot) {
 }
 
 power_mm1_func <- function(dat2plot) {
-power_mm1 <- lme(fat_fake ~ 1 + logest_fake + sex_fake, random = ~1 | RoSA, method = "REML", data = dat2plot) #random intercept model
+  power_mm1 <- lme(fat_fake ~ 1 + logest_fake + sex_fake, random = ~ 1 | RoSA, method = "REML", data = dat2plot) # random intercept model
 }
-
-
 ```
 
 And now we can make a tibble that stores 20 simulated data sets and the outputs of their
@@ -367,14 +396,16 @@ analyses.  We will use some list columns:
 ```{r, warning=FALSE}
 set.seed(5) # for reproducibility
 sim_tibble <- tibble(
-  data_sets = lapply(1:10, function(x) fat_fake_data(allele_effect = 0.0425,pop_size = 100))
+  data_sets = lapply(1:10, function(x) fat_fake_data(allele_effect = 0.0425, pop_size = 100))
 ) %>%
-  mutate(plots = map(data_sets, ggplot_fake_fat_data),
-         power_M1 = map(data_sets, power_M1_func),
-         power_mm1 = map(data_sets, power_mm1_func),
-         anova = map2(.x = power_M1, .y = power_mm1, .f = anova),
-         ranef = map(power_mm1, ranef),
-         signif = map_dbl(anova, ~.$`p-value`[2]))
+  mutate(
+    plots = map(data_sets, ggplot_fake_fat_data),
+    power_M1 = map(data_sets, power_M1_func),
+    power_mm1 = map(data_sets, power_mm1_func),
+    anova = map2(.x = power_M1, .y = power_mm1, .f = anova),
+    ranef = map(power_mm1, ranef),
+    signif = map_dbl(anova, ~ .$`p-value`[2])
+  )
 ```
 
 Now, take the first four that have a p-value < 0.05:
@@ -396,12 +427,13 @@ signif_4$signif
 Now we can plot the 4 simulated data sets.
 ```{r figure.width=11}
 plot_grid(signif_4$plots[[1]],
-                     signif_4$plots[[2]],
-                     signif_4$plots[[3]],
-                     signif_4$plots[[4]], 
-                     ncol = 2)
+  signif_4$plots[[2]],
+  signif_4$plots[[3]],
+  signif_4$plots[[4]],
+  ncol = 2
+)
 
-ggsave("./outputs/104.1/simulated_fatness_sampling_date_faceted.pdf",width=11)
+ggsave("./outputs/104.1/simulated_fatness_sampling_date_faceted.pdf", width = 11)
 ```
 
 This plot graphically represents the difference in NWF among EE, EL and LL genotypes that would need to be present to find a statistically significant random effect at 80% power. 

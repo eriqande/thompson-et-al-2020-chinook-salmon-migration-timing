@@ -91,10 +91,8 @@ ftv <- read.vcfR("intermediates/201/first-test.vcf.gz")
 ftvt <- vcfR2tidy(ftv)
 
 
-#View(ftvt$gt)
-#View(ftvt$fix)
-
-
+# View(ftvt$gt)
+# View(ftvt$fix)
 ```
 
 Let's get the breakend position in the ALT field and filter things down to
@@ -103,8 +101,10 @@ of the breakend positions from each pair, just for a quick look
 ```{r}
 candidates <- ftvt$fix %>%
   filter(CHROM == "NC_037124.1" & str_detect(ALT, "NC_037124.1")) %>%
-  mutate(ALT_POS = as.integer(str_match(ALT, ":([0-9]+)")[,2]),
-         BE_ABS_DIFF = abs(ALT_POS - POS)) %>%
+  mutate(
+    ALT_POS = as.integer(str_match(ALT, ":([0-9]+)")[, 2]),
+    BE_ABS_DIFF = abs(ALT_POS - POS)
+  ) %>%
   select(ChromKey:POS, ALT_POS, BE_ABS_DIFF, everything()) %>%
   filter(pmin(POS, ALT_POS) < 12.26e6 & pmax(POS, ALT_POS) > 12.29e6) %>%
   arrange(desc(BE_ABS_DIFF))

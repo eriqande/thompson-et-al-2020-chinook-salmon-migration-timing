@@ -16,6 +16,8 @@ start_time <- Sys.time()
 ```{r}
 library(tidyverse)
 library(rubias)
+
+dir.create("outputs/101", recursive = TRUE, showWarnings = FALSE)
 ```
 
 #1. Load GSI baseline data frame.
@@ -23,17 +25,19 @@ library(rubias)
 Baseline final has samples with less than 15% missing data and there are no duplicates.
 ```{r check-collection-numbers}
 baseline_final <- readRDS("./data/101-GSI-rubias-baseline-data.rds")
-baseline_final %>% count(collection,repunit) %>% arrange(repunit)
+baseline_final %>%
+  count(collection, repunit) %>%
+  arrange(repunit)
 ```
 
 Some of those collection counts are pretty dang small. I'm going to lump all Salmon River collections into a single collection. The rest of the collections look good to me.
 
 ```{r rename-salmon-river-collections}
-baseline_final <- baseline_final %>% 
-  mutate(collection = ifelse(collection%in%c("SouthForkSalmonRiver","SalmonSp","SalmonRiver","SalmonR","SalmonFall","EastForkSouthForkSalmonRiver"),"SalmonRiver",collection))
+baseline_final <- baseline_final %>%
+  mutate(collection = ifelse(collection %in% c("SouthForkSalmonRiver", "SalmonSp", "SalmonRiver", "SalmonR", "SalmonFall", "EastForkSouthForkSalmonRiver"), "SalmonRiver", collection))
 
-baseline_final %>% 
-  count(collection,repunit) %>% 
+baseline_final %>%
+  count(collection, repunit) %>%
   arrange(repunit)
 ```
 
@@ -58,8 +62,9 @@ sa_to_repu <- sa_chinook %>%
   group_by(indiv, collection, repunit, inferred_repunit) %>%
   summarise(repu_scaled_like = sum(scaled_likelihood))
 
-sa_to_repu %>% group_by(indiv) %>%
-  top_n(1, wt = repu_scaled_like) %>% 
+sa_to_repu %>%
+  group_by(indiv) %>%
+  top_n(1, wt = repu_scaled_like) %>%
   mutate(same_pop = ifelse(repunit == inferred_repunit, "yes", "no")) %>%
   ungroup() %>%
   count(same_pop)
@@ -70,47 +75,50 @@ The baseline has a `r 100* (1-round(100/(100+2629),3))` correct assignment perce
 Which baseline samples are assigned to an "incorrect " population?
 
 ```{r, baseline-incorrect-self-assignment}
-sa_to_repu %>% 
+sa_to_repu %>%
   group_by(indiv) %>%
-  top_n(1, wt = repu_scaled_like) %>% 
-  mutate(same_pop = ifelse(repunit == inferred_repunit, "yes", "no")) %>% 
+  top_n(1, wt = repu_scaled_like) %>%
+  mutate(same_pop = ifelse(repunit == inferred_repunit, "yes", "no")) %>%
   ungroup() %>%
   filter(same_pop == "no") %>%
-  mutate(tmp = paste0(repunit,"_",inferred_repunit)) %>%
+  mutate(tmp = paste0(repunit, "_", inferred_repunit)) %>%
   count(tmp) %>%
   separate(tmp, into = c("repunit", "inferred_repunit"))
 ```
 
 Calculate repunit self-assignment accuracy
 ```{r self-assign-repunit-accuracy}
-sa_to_repu %>% group_by(indiv) %>%
-  top_n(1, wt = repu_scaled_like) %>% 
+sa_to_repu %>%
+  group_by(indiv) %>%
+  top_n(1, wt = repu_scaled_like) %>%
   mutate(same_pop = ifelse(repunit == inferred_repunit, "yes", "no")) %>%
   ungroup() %>%
   group_by(repunit) %>%
   count(same_pop) %>%
   mutate(tot_fish = sum(n)) %>%
-  filter(same_pop=="yes") %>%
-  mutate(assign_rate = n/tot_fish) %>%
-  rename(n_same = n) 
+  filter(same_pop == "yes") %>%
+  mutate(assign_rate = n / tot_fish) %>%
+  rename(n_same = n)
 ```
 
 
 4. Perform a mixture analysis using the boostrap correction reporting unit proportions RUBIAS settings from https://github.com/eriqande/rubias/blob/master/vignettes/rubias-overview.Rmd
 ```{r}
-mix_est_pb <- infer_mixture(reference = baseline_final, 
-                         mixture = mixture_final, 
-                         gen_start_col = 5,
-                         method = "PB")
+mix_est_pb <- infer_mixture(
+  reference = baseline_final,
+  mixture = mixture_final,
+  gen_start_col = 5,
+  method = "PB"
+)
 ```
 
 Reporting mixture proportion estimates for each baseline population
 ```{r rep-mix-props-for-each-baseline-pop}
 rep_mix_ests <- mix_est_pb$mixing_proportions %>%
   group_by(mixture_collection, repunit) %>%
-  summarise(repprop = round(sum(pi),3)) 
+  summarise(repprop = round(sum(pi), 3))
 
-rep_mix_ests %>% 
+rep_mix_ests %>%
   arrange(desc(repprop))
 ```
 
@@ -118,9 +126,9 @@ Calculate individuals posteriors
 ```{r}
 rep_indiv_ests <- mix_est_pb$indiv_posteriors %>%
   group_by(mixture_collection, indiv, repunit) %>%
-  summarise(rep_pofz = sum(PofZ)) 
+  summarise(rep_pofz = sum(PofZ))
 
-rep_indiv_ests %>% 
+rep_indiv_ests %>%
   group_by(indiv) %>%
   arrange(desc(rep_pofz)) %>%
   slice(1) %>%
@@ -137,7 +145,9 @@ trace_subset <- mix_est_pb$mix_prop_traces %>%
   summarise(repprop = sum(pi))
 
 ggplot(trace_subset, aes(x = repprop, colour = repunit)) +
-  geom_density(size = 2) + ylim(0,50)+ theme_bw()
+  geom_density(size = 2) +
+  ylim(0, 50) +
+  theme_bw()
 ```
 
 Lets see if any of the fish look like non Klamath River basin fish, blue line should mirror the black line.
@@ -160,16 +170,18 @@ Computing credible intervals
 ```{r}
 top_cis <- trace_subset %>%
   group_by(repunit) %>%
-  summarise(pt_est = round(mean(repprop),3),
-            loCI = round(quantile(repprop, probs = 0.025),3),
-            hiCI = round(quantile(repprop, probs = 0.975),3))
-top_cis 
+  summarise(
+    pt_est = round(mean(repprop), 3),
+    loCI = round(quantile(repprop, probs = 0.025), 3),
+    hiCI = round(quantile(repprop, probs = 0.975), 3)
+  )
+top_cis
 ```
 
 There is 1 fish that didn't assign to a Klamath Basin reporting unit.  Let's see what RoSA genotype that fish has.
 ```{r check-non-Klamath-assigned-fish}
 kl_rosa <- read_rds("./data/101-RoSA-klamath-estuary-samples.rds")
-kl_rosa %>% filter(Indiv=="CH11459")
+kl_rosa %>% filter(Indiv == "CH11459")
 ```
 
 Having a homozygous late genotype in a fish assigned to the CoastalCA repunit isn't surprising. It makes sense that the fish is homozygous late as only fall-run ecotype fish are present in the CoastalCA repunit.
@@ -179,13 +191,13 @@ Write an RDS to use in later analyses.
 ```{r, write rds for later use, warning=FALSE,message=FALSE}
 dir.create("./outputs")
 
-estuary_assignments <- rep_indiv_ests %>% 
+estuary_assignments <- rep_indiv_ests %>%
   group_by(indiv) %>%
   arrange(desc(rep_pofz)) %>%
   slice(1) %>%
-  ungroup() 
+  ungroup()
 
-write_rds(estuary_assignments,"./outputs/101-RoSA-klamath-estuary-rubias-assignments.rds", compress="xz")
+write_rds(estuary_assignments, "./outputs/101/RoSA-klamath-estuary-rubias-assignments.rds", compress = "xz")
 ```
 
 # Session Info

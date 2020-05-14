@@ -69,27 +69,27 @@ for(f in files) {
 message("Creating directory final-figs and copying figures to it")
 dir.create("final-figs", showWarnings = FALSE)
 
-file.copy("outputs/100/RoSA_figure1_map_with_inset.pdf", "final-figs/fig-01.pdf")
-file.copy("outputs/002/allele-frequencies.pdf", "final-figs/fig-02.pdf")
-file.copy("hand-edited-images/ultra-heatmap-chopped.pdf", "final-figs/fig-03.pdf")
-file.copy("outputs/105/RoSA_figure4_multipanel_estuary_gonadsi_fatness.pdf", "final-figs/fig-04.pdf")
+file.copy("outputs/100/RoSA_figure1_map_with_inset.pdf", "final-figs/fig-01.pdf", overwrite = TRUE)
+file.copy("outputs/002/allele-frequencies.pdf", "final-figs/fig-02.pdf", overwrite = TRUE)
+file.copy("hand-edited-images/ultra-heatmap-chopped.pdf", "final-figs/fig-03.pdf", overwrite = TRUE)
+file.copy("outputs/105/RoSA_figure4_multipanel_estuary_gonadsi_fatness.pdf", "final-figs/fig-04.pdf", overwrite = TRUE)
 
-file.copy("outputs/009/chinook-only-distance-unrooted-tree_jc.pdf", "final-figs/fig-S01.pdf")
-file.copy("outputs/006/haplo-raster-alleles.pdf", "final-figs/fig-S02.pdf")
-file.copy("outputs/009/tree-and-smooth.pdf", "final-figs/fig-S03.pdf")
-file.copy("outputs/006/haplo-raster-read-depths.pdf", "final-figs/fig-S04.pdf")
-file.copy("outputs/008/aggregate-read-depth-lines.pdf", "final-figs/fig-S05.pdf")
-file.copy("outputs/008/dupie-read-depth-scatter.pdf", "final-figs/fig-S06.pdf")
-file.copy("outputs/106/trh-gsi-plot.pdf", "final-figs/fig-S07.pdf")
-file.copy("outputs/106/trh-spawn-date-plot.pdf", "final-figs/fig-S08.pdf")
+file.copy("outputs/009/chinook-only-distance-unrooted-tree_jc.pdf", "final-figs/fig-S01.pdf", overwrite = TRUE)
+file.copy("outputs/006/haplo-raster-alleles.pdf", "final-figs/fig-S02.pdf", overwrite = TRUE)
+file.copy("outputs/009/tree-and-smooth.pdf", "final-figs/fig-S03.pdf", overwrite = TRUE)
+file.copy("outputs/006/haplo-raster-read-depths.pdf", "final-figs/fig-S04.pdf", overwrite = TRUE)
+file.copy("outputs/008/aggregate-read-depth-lines.pdf", "final-figs/fig-S05.pdf", overwrite = TRUE)
+file.copy("outputs/008/dupie-read-depth-scatter.pdf", "final-figs/fig-S06.pdf", overwrite = TRUE)
+file.copy("outputs/106/trh-gsi-plot.pdf", "final-figs/fig-S07.pdf", overwrite = TRUE)
+file.copy("outputs/106/trh-spawn-date-plot.pdf", "final-figs/fig-S08.pdf", overwrite = TRUE)
 
 # Fig S9 was created outside of this repository
 
-file.copy("outputs/010/salmon-river-spatiotemporal-map-2006.pdf", "final-figs/fig-S10.pdf")
-file.copy("outputs/010/salmon-river-map-all-years-faceted-by-geno.pdf", "final-figs/fig-S11.pdf")
-file.copy("outputs/010/salmon-river_hwe_counts-3-panel.pdf", "final-figs/fig-S12.pdf")
-file.copy("hand-edited-images/recomb-coal.pdf", "final-figs/fig-S13.pdf")
-file.copy("outputs/012/prince-rosa-recomb-histos.pdf", "final-figs/fig-S14.pdf")
+file.copy("outputs/010/salmon-river-spatiotemporal-map-2006.pdf", "final-figs/fig-S10.pdf", overwrite = TRUE)
+file.copy("outputs/010/salmon-river-map-all-years-faceted-by-geno.pdf", "final-figs/fig-S11.pdf", overwrite = TRUE)
+file.copy("outputs/010/salmon-river_hwe_counts-3-panel.pdf", "final-figs/fig-S12.pdf", overwrite = TRUE)
+file.copy("hand-edited-images/recomb-coal.pdf", "final-figs/fig-S13.pdf", overwrite = TRUE)
+file.copy("outputs/012/prince-rosa-recomb-histos.pdf", "final-figs/fig-S14.pdf", overwrite = TRUE)
 
 
 

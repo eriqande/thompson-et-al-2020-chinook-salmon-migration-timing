@@ -64,8 +64,6 @@ for_input <- plist$D %>%
 # now we can write that out
 cat(sort(unique(plist$D$POS)), file = "intermediates/007/rent-input.txt", sep = " ", eol = "\n")
 cat(for_input$int_string, sep = "\n", file = "intermediates/007/rent-input.txt", append = TRUE, eol = "\n")
-
-
 ```
 
 Now, let's try running that dude:
@@ -85,7 +83,8 @@ That turns out to take about five minutes.
 
 ```{r}
 tree_positions <- read_table2("intermediates/007/rent-input.txt.trees",
-                              col_names = c("POS", "tree")) %>%
+  col_names = c("POS", "tree")
+) %>%
   select(POS)
 
 all_trees <- read.tree("intermediates/007/rent-input.txt.ape-readable")
@@ -100,7 +99,7 @@ Let's plot the local tree at position 12267547, which is one of our ROSA microha
 p <- ggtree(all_trees[["12267547"]]) %<+%
   for_input +
   scale_shape_manual(values = c(1, 19)) +
-  theme(legend.position="right") # +
+  theme(legend.position = "right") # +
 
 print(p)
 ```
@@ -109,7 +108,7 @@ Before we go further, I want to make a tree that has node labels so that
 I can look at those and use them for selecting different groups of haplotypes.
 ```{r}
 p_node_labels <- p +
-  geom_text2(aes(subset=!isTip, label=node), hjust=-.3) + 
+  geom_text2(aes(subset = !isTip, label = node), hjust = -.3) +
   geom_tiplab()
 
 print(p_node_labels)
@@ -146,27 +145,26 @@ seq_meta <- Ssums %>%
   mutate(inHetFish = any(NumSs < 125) & any(NumSs >= 125)) %>%
   mutate(Ecotype = recode(
     ecotype,
-      "Fall" =  "Fall Run",
-      "Spring" =  "Spring Run",
-      "Late Fall" =  "Late Fall Run",
-      "Winter" =  "Winter Run"
-    )) %>%
+    "Fall" = "Fall Run",
+    "Spring" = "Spring Run",
+    "Late Fall" = "Late Fall Run",
+    "Winter" = "Winter Run"
+  )) %>%
   mutate(Population = recode(
-      pop,
-      "Salmon_River" =  "Salmon R.",
-      "Feather_River_Hatchery" =  "Feather R.H.",
-      "Trinity_River_Hatchery" =  "Trinity R.H.",
-      "San_Joaquin_River" =  "San Joaquin R.",
-      "Coleman_Hatchery" =  "Coleman H.",
-      "Sacramento_River" =  "Sacramento R. Winter Run",
-      "Butte_Creek" =  "Butte Ck."
-    )) %>%
+    pop,
+    "Salmon_River" =  "Salmon R.",
+    "Feather_River_Hatchery" =  "Feather R.H.",
+    "Trinity_River_Hatchery" =  "Trinity R.H.",
+    "San_Joaquin_River" =  "San Joaquin R.",
+    "Coleman_Hatchery" =  "Coleman H.",
+    "Sacramento_River" =  "Sacramento R. Winter Run",
+    "Butte_Creek" =  "Butte Ck."
+  )) %>%
   mutate(Basin = recode(
     lineage,
     "Sacto" = "Sacramento Basin",
     "Klamath" = "Klamath Basin"
   ))
-  
 ```
 
 
@@ -179,14 +177,15 @@ we can pass to cbind().
 col_width <- 15
 extra_mats <- list(
   ecotype = matrix(rep(seq_meta$Ecotype, each = col_width), byrow = TRUE, ncol = col_width),
-#  sep1 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
+  #  sep1 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
   het = matrix(rep(ifelse(seq_meta$inHetFish == TRUE, "Heterozygous", "Homozygous"), each = col_width),
-             byrow = TRUE,
-             ncol = col_width),
-#  sep2 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
+    byrow = TRUE,
+    ncol = col_width
+  ),
+  #  sep2 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
   basin = matrix(rep(seq_meta$Basin, each = col_width), byrow = TRUE, ncol = col_width),
-#  sep3 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
-#  pop = matrix(rep(seq_meta$Population, each = col_width), byrow = TRUE, ncol = col_width),
+  #  sep3 = matrix(rep(NA, nrow(seq_meta)), ncol = 1),
+  #  pop = matrix(rep(seq_meta$Population, each = col_width), byrow = TRUE, ncol = col_width),
   sep4 = matrix(rep(NA, 3 * nrow(seq_meta)), ncol = 3)
 ) %>%
   do.call(cbind, .)
@@ -196,11 +195,11 @@ rownames(extra_mats) <- seq_meta$haplo_name
 
 
 ```{r}
-ultra1 <-  long_ultra1 %>%
+ultra1 <- long_ultra1 %>%
   select(haplo_name, POS, atypes) %>%
   spread(POS, atypes)
 
-ultra_mat <- as.matrix(ultra1[,-1])
+ultra_mat <- as.matrix(ultra1[, -1])
 rownames(ultra_mat) <- ultra1$haplo_name
 
 ultra_sorted <- ultra_mat[for_input$haplo_name, ]
@@ -215,17 +214,18 @@ combo_mat <- cbind(extra_sorted, ultra_sorted)
 source("R/define_fcolors_all_sf.R")
 fcolors_all_sf["Homozygous"] <- "black"
 
-heat <- gheatmap(p, combo_mat, 
-                 offset= 0.2, 
-                 width=0.8, 
-                 font.size=0.8, 
-                 colnames_angle=-45, 
-                 hjust=0, color = NA) +
-    scale_fill_manual(values = fcolors_all_sf) +
+heat <- gheatmap(p, combo_mat,
+  offset = 0.2,
+  width = 0.8,
+  font.size = 0.8,
+  colnames_angle = -45,
+  hjust = 0, color = NA
+) +
+  scale_fill_manual(values = fcolors_all_sf) +
   theme(legend.position = "none")
 
 heat2 <- heat +
-  expand_limits(x = 27, y = 341) + 
+  expand_limits(x = 27, y = 341) +
   annotate("text", x = 96, y = 296, label = "Ecotype of Fish", size = 11, hjust = 1, angle = -45) +
   annotate("text", x = 100.5, y = 296, label = "Fish RoSA Zygosity", size = 11, hjust = 1, angle = -45) +
   annotate("text", x = 105, y = 296, label = "Basin/Lineage", size = 11, hjust = 1, angle = -45) +
@@ -234,9 +234,9 @@ heat2 <- heat +
 
 # now, in order to get a legend like I would like to have, I think I am going to have
 # to put it on there manually
-ectx <- 45 #10
-fhx <-  80 # 45
-blx <-  112   # 80
+ectx <- 45 # 10
+fhx <- 80 # 45
+blx <- 112 # 80
 px <- 112
 p1x <- 112
 p2x <- 131
@@ -250,7 +250,7 @@ heat3 <- heat2 +
   annotate("text", x = ectx, y = ty, size = 12, hjust = 0, label = "Ecotype of Fish") +
   annotate("text", x = fhx, y = ty, size = 12, hjust = 0, label = "Fish RoSA Zygosity") +
   annotate("text", x = blx, y = ty, size = 12, hjust = 0, label = "Basin/Lineage") +
-  #annotate("text", x = px, y = ty, size = 12, hjust = 0, label = "Population") +
+  # annotate("text", x = px, y = ty, size = 12, hjust = 0, label = "Population") +
   #
   # Now the Ecotype colors
   #
@@ -276,27 +276,27 @@ heat3 <- heat2 +
   annotate("text", x = blx + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Sacramento Basin") +
   annotate("rect", xmin = blx, xmax = blx + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#74c476", colour = "black", size = 0.1) +
   annotate("text", x = blx + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Klamath Basin") #+
-  #
-  # First column of Pop stuff (Klamath)
-  #
-  # annotate("rect", xmin = p1x, xmax = p1x + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#238b45", colour = "black", size = 0.1) +
-  # annotate("text", x = p1x + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Trinity R.H.") +
-  # annotate("rect", xmin = p1x, xmax = p1x + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#bae4b3", colour = "black", size = 0.1) +
-  # annotate("text", x = p1x + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Salmon R.") +
-  # #
-  # # Finally, the last column of populations
-  # #
-  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#a50f15", colour = "black", size = 0.1) +
-  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Sacramento R. Winter Run") +
-  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#fb6a4a", colour = "black", size = 0.1) +
-  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "San Joaquin R.") +
-  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 7, ymax = ty - ystep * 6, fill = "#fc9272", colour = "black", size = 0.1) +
-  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 6.5, size = 9, hjust = 0, vjust = 0.5, label = "Butte Ck.") +
-  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 9, ymax = ty - ystep * 8, fill = "#fcbba1", colour = "black", size = 0.1) +
-  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 8.5, size = 9, hjust = 0, vjust = 0.5, label = "Coleman H.") +
-  # annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 11, ymax = ty - ystep * 10, fill = "#fee5d9", colour = "black", size = 0.1) +
-  # annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 10.5, size = 9, hjust = 0, vjust = 0.5, label = "Feather R.H.")
-  
+#
+# First column of Pop stuff (Klamath)
+#
+# annotate("rect", xmin = p1x, xmax = p1x + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#238b45", colour = "black", size = 0.1) +
+# annotate("text", x = p1x + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Trinity R.H.") +
+# annotate("rect", xmin = p1x, xmax = p1x + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#bae4b3", colour = "black", size = 0.1) +
+# annotate("text", x = p1x + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "Salmon R.") +
+# #
+# # Finally, the last column of populations
+# #
+# annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 3, ymax = ty - ystep * 2, fill = "#a50f15", colour = "black", size = 0.1) +
+# annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 2.5, size = 9, hjust = 0, vjust = 0.5, label = "Sacramento R. Winter Run") +
+# annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 5, ymax = ty - ystep * 4, fill = "#fb6a4a", colour = "black", size = 0.1) +
+# annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 4.5, size = 9, hjust = 0, vjust = 0.5, label = "San Joaquin R.") +
+# annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 7, ymax = ty - ystep * 6, fill = "#fc9272", colour = "black", size = 0.1) +
+# annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 6.5, size = 9, hjust = 0, vjust = 0.5, label = "Butte Ck.") +
+# annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 9, ymax = ty - ystep * 8, fill = "#fcbba1", colour = "black", size = 0.1) +
+# annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 8.5, size = 9, hjust = 0, vjust = 0.5, label = "Coleman H.") +
+# annotate("rect", xmin = p2x, xmax = p2x + rsize, ymin = ty - ystep * 11, ymax = ty - ystep * 10, fill = "#fee5d9", colour = "black", size = 0.1) +
+# annotate("text", x = p2x + rsize + xnudge, y = ty - ystep * 10.5, size = 9, hjust = 0, vjust = 0.5, label = "Feather R.H.")
+
 
 ggsave(heat3, filename = "outputs/007/ultra-heatmap.pdf", width = 30, height = 20)
 ```
@@ -315,7 +315,7 @@ from our left-most RoSA SNP assay to our right-most RoSA SNP assay
 
 ```{r}
 dir.create("coalescent-tree-shiny-app/data", showWarnings = FALSE, recursive = TRUE)
-all_trees <- all_trees[as.integer(names(all_trees)) >= 12267547 & as.integer(names(all_trees)) <= 12281401 ]
+all_trees <- all_trees[as.integer(names(all_trees)) >= 12267547 & as.integer(names(all_trees)) <= 12281401]
 save(for_input, all_trees, seq_meta, file = "coalescent-tree-shiny-app/data/coal-trees-etc-for-shiny.rda", compress = "xz")
 ```
 

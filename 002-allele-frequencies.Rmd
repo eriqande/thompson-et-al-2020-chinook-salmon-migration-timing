@@ -192,9 +192,11 @@ on the read depth requirement, separately.  Then we will do an inner join of all
 
 Get the spring run:
 ```{r}
-spring_files <- dir(path = "~/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring",
-                    pattern = "spring-run",
-                    full.names = TRUE)
+spring_files <- dir(
+  path = "~/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring",
+  pattern = "spring-run",
+  full.names = TRUE
+)
 
 spring_freqs <- lapply(spring_files, function(x) {
   read_tsv(x) %>%
@@ -205,9 +207,11 @@ spring_freqs <- lapply(spring_files, function(x) {
 
 Then get the fall run:
 ```{r}
-fall_files <- dir(path = "~/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring",
-                    pattern = "fall-run",
-                    full.names = TRUE)
+fall_files <- dir(
+  path = "~/Documents/UnsyncedData/chinook-wgs-alle-freqs-fall-v-spring",
+  pattern = "fall-run",
+  full.names = TRUE
+)
 
 fall_freqs <- lapply(fall_files, function(x) {
   read_tsv(x) %>%
@@ -218,16 +222,20 @@ fall_freqs <- lapply(fall_files, function(x) {
 Now we do the inner join:
 ```{r}
 spring_fall <- inner_join(
-  fall_freqs, 
-  spring_freqs, 
-  by = c("chromo", "position"), 
-  suffix = c("_fall", "_spring")) %>% 
+  fall_freqs,
+  spring_freqs,
+  by = c("chromo", "position"),
+  suffix = c("_fall", "_spring")
+) %>%
   mutate(
-    ave_freq = (unknownEM_fall + unknownEM_spring) / 2, 
+    ave_freq = (unknownEM_fall + unknownEM_spring) / 2,
     abs_diff = abs(unknownEM_fall - unknownEM_spring)
-  ) 
+  )
 ```
 And it is quite straightforward from here. Note that we have 9,170,403 SNPs here.
+
+I considered compressing `spring_fall` into a stored result, but that was going to
+be somewhere >200 Mb, and that did not seem worth it. 
 
 ## Hexbin plot
 First, we are going to make a 2-D histogram of average allele freq vs absolute difference.
@@ -284,7 +292,7 @@ mh_plot <- plot_mh(sf_prepped$snps, sf_prepped$axisdf) +
   xlab("Position along chromosome") +
   ylab("Absolute value of allele frequency difference, spring-run vs. fall-run")
 
-#ggsave(mh_plot, filename = "outputs/002/abs-diff-alle-freq-manhattan.pdf", width = 12, height = 8)
+# ggsave(mh_plot, filename = "outputs/002/abs-diff-alle-freq-manhattan.pdf", width = 12, height = 8)
 mh_plot
 ```
 
@@ -300,8 +308,10 @@ Let's look at which areas we are missing here
 ```{r}
 spring_fall %>%
   group_by(chromo) %>%
-  summarise(min = min(position),
-            max = max(position)) %>%
+  summarise(
+    min = min(position),
+    max = max(position)
+  ) %>%
   left_join(chrom_lengths, by = c("chromo" = "Chromosome"))
 ```
 
@@ -311,10 +321,10 @@ everything is missing at the end of 105.1, though.
 Let's have a look at those chromosomes and snp density:
 ```{r}
 sf_lite %>%
-  filter(Chromosome %in% c("NC_037105.1", "NC_037106.1") ) %>%
-  ggplot(., aes(x = position, y = abs_diff)) + 
+  filter(Chromosome %in% c("NC_037105.1", "NC_037106.1")) %>%
+  ggplot(., aes(x = position, y = abs_diff)) +
   geom_point(alpha = 0.2) +
-  facet_wrap(~ Chromosome, scales = "free", ncol = 1) +
+  facet_wrap(~Chromosome, scales = "free", ncol = 1) +
   scale_x_continuous(breaks = (1:10) * 1e7)
 ```
 
@@ -356,7 +366,7 @@ going to worry much about the ends.
 ```{r}
 longest <- max(chrom_lengths$chrom_length)
 breaks <- c(seq(1, longest, by = 1000000), longest)
-labs <- sprintf("%d-%d", breaks, breaks + 999999)   #, sprintf("%09d-%09d", max(breaks) + 99999, longest))
+labs <- sprintf("%d-%d", breaks, breaks + 999999) # , sprintf("%09d-%09d", max(breaks) + 99999, longest))
 labs <- labs[-length(labs)]
 
 intvls <- spring_fall %>%
@@ -369,8 +379,6 @@ intvls <- spring_fall %>%
   left_join(., chrom_lengths, by = "Chromosome") %>%
   filter(lo < chrom_length) %>%
   filter(str_detect(Chromosome, "^NC_"))
-
-
 ```
 
 At this juncture we write a little function that will give integer indexes to contiguous 
@@ -389,11 +397,13 @@ contig_groups <- function(v) {
 redo_from_bams <- intvls %>%
   arrange(Chromosome, lo) %>%
   mutate(cgroup = contig_groups(n)) %>%
-  filter(n == 0) %>% 
+  filter(n == 0) %>%
   group_by(Chromosome, cgroup) %>%
-  summarise(lo = min(lo),
-            hi = max(hi),
-            length = hi - lo + 1)
+  summarise(
+    lo = min(lo),
+    hi = max(hi),
+    length = hi - lo + 1
+  )
 
 # and now all we need to do is print a string of regions to pick out of the bams:
 bamstr <- redo_from_bams %>%
@@ -401,7 +411,7 @@ bamstr <- redo_from_bams %>%
 
 # here is what it looks like
 cat(bamstr$region, sep = " ")
-  
+
 # here is where we put it into a file:
 cat(bamstr$region, sep = " ", file = "intermediates/002/reg_str_file.txt")
 ```
@@ -541,7 +551,7 @@ full_comp <- bf_fall %>%
 3. Quickly see if there is anything that did now show up in fall (say) that was at high frequency in spring,
 and vice versa
 ```{r}
-tmp <- full_comp %>% 
+tmp <- full_comp %>%
   filter(xor(is.na(unknownEM_fall), is.na(unknownEM_spring)))
 
 # plot histogram of spring freqs for variants absent in fall
@@ -576,7 +586,7 @@ Let's inner join these and only compare things that were found in both.
 inner_comp <- bf_fall %>%
   inner_join(bf_spring, by = c("chromo", "position"), suffix = c("_fall", "_spring")) %>%
   mutate(
-    ave_freq = (unknownEM_fall + unknownEM_spring) / 2, 
+    ave_freq = (unknownEM_fall + unknownEM_spring) / 2,
     abs_diff = abs(unknownEM_fall - unknownEM_spring)
   ) %>%
   rename(Chromosome = chromo) %>%
@@ -587,12 +597,9 @@ inner_comp <- bf_fall %>%
 # but, of course we shouldn't have any of those...
 sf_av_lite <- inner_comp %>%
   anti_join(., sf_lite, by = c("Chromosome", "position")) %>%
-  filter(abs_diff >= 0.2) %>%  # keep only these
+  filter(abs_diff >= 0.2) %>% # keep only these
   bind_rows(., sf_lite %>% mutate(source = "vcf")) %>%
   arrange(Chromosome, position)
-
-
-  
 ```
 
 Now we should be able to make the Manhattan plot:
@@ -612,7 +619,6 @@ sf_av_lite %>%
   filter(Chromosome == "NC_037105.1") %>%
   ggplot(aes(x = position)) +
   geom_histogram(binwidth = 1000000)
-
 ```
 
 What about the raw unfiltered stuff from spring and fall?
@@ -642,7 +648,7 @@ chrom_name_tib <- read_tsv("data/chromosome-name-demangle.txt") %>%
   mutate(chrom_num = as.integer(str_replace_all(molecule_name, "Chromosome ", ""))) %>%
   rename(cluster = RefSeq_sequence) %>%
   select(cluster, chrom_num)
-  
+
 
 sf_av_renamed <- sf_av_prepped
 sf_av_renamed$axisdf <- sf_av_renamed$axisdf %>%
@@ -653,7 +659,7 @@ sf_av_renamed$axisdf <- sf_av_renamed$axisdf %>%
 
 sf_av_renamed$snps <- sf_av_renamed$snps %>%
   filter(str_detect(Chromosome, "^NC"))
-  
+
 
 mh_avr_plot <- plot_mh(sf_av_renamed$snps, sf_av_renamed$axisdf) +
   xlab("Position on numbered chromosomes") +
@@ -706,7 +712,6 @@ meta %>%
   filter(run_type == "Winter" | run_type == "Spring") %>%
   .$vcf_name %>%
   cat(., sep = "\n", file = "intermediates/002/spring-winters.txt")
-
 ```
 
 ## Making a vcf for falls and one for springers
@@ -744,8 +749,10 @@ spring_wintmaf <- read_tsv("intermediates/002/spring-winters.mafs.gz")
 ```{r}
 # merge the spring and the fall here, and filter so that we have 30 individuals in each
 everyone_moiged <- left_join(fallmaf, springmaf, by = c("chromo", "position")) %>%
-  mutate(abs_diff = abs(knownEM.y - knownEM.x),
-         diff_ge_98 = abs_diff > 0.98) %>%
+  mutate(
+    abs_diff = abs(knownEM.y - knownEM.x),
+    diff_ge_98 = abs_diff > 0.98
+  ) %>%
   mutate(`diff > 0.98` = diff_ge_98)
 
 # then filter it down so that we only keep ones that have enough
@@ -753,7 +760,7 @@ everyone_moiged <- left_join(fallmaf, springmaf, by = c("chromo", "position")) %
 moiged <- everyone_moiged %>%
   filter(nInd.x >= 30 & nInd.y >= 30)
 
-# now .x = fall and .y = spring  
+# now .x = fall and .y = spring
 # it turns out that major and minor line up with both data sets
 ```
 
@@ -764,11 +771,12 @@ moiged <- everyone_moiged %>%
 ```{r}
 # merge the spring-winter and the fall here, and filter so that we have 30 individuals in each
 moiged2 <- left_join(fallmaf, spring_wintmaf, by = c("chromo", "position")) %>%
-  mutate(abs_diff = abs(knownEM.y - knownEM.x),
-         diff_ge_98 = abs_diff > 0.98) %>%
+  mutate(
+    abs_diff = abs(knownEM.y - knownEM.x),
+    diff_ge_98 = abs_diff > 0.98
+  ) %>%
   filter(nInd.x >= 30 & nInd.y >= 38) %>%
   mutate(`diff > 0.98` = diff_ge_98)
-
 ```
 
 ## Make a figure for the paper
@@ -788,14 +796,15 @@ Now, read that in and play with it:
 ```{r}
 # read em in
 gff <- read_tsv("intermediates/002/greb-rock.gff", col_names = FALSE) %>%
-  setNames(c("chrom",
-             "source",
-             "what",
-             "start",
-             "stop",
-             "X1", "X2", "X3",
-             "keyvals"
-             ))
+  setNames(c(
+    "chrom",
+    "source",
+    "what",
+    "start",
+    "stop",
+    "X1", "X2", "X3",
+    "keyvals"
+  ))
 
 # expand the keyvals
 gff_exp <- ecaRbioinf::separate_key_value_pairs(gff, "keyvals")
@@ -819,17 +828,23 @@ Keep the exons.
 ```{r}
 exons <- exocds %>%
   filter(what == "exon") %>%
-  mutate(start_mb = start / 1e06,
-         stop_mb = stop / 1e06)
+  mutate(
+    start_mb = start / 1e06,
+    stop_mb = stop / 1e06
+  )
 
 greb <- exons %>%
   filter(gene == "GREB1L") %>%
-  summarise(min = min(start_mb),
-            max = max(stop_mb))
+  summarise(
+    min = min(start_mb),
+    max = max(stop_mb)
+  )
 rock <- exons %>%
   filter(gene == "ROCK1") %>%
-  summarise(min = min(start_mb),
-            max = max(stop_mb))
+  summarise(
+    min = min(start_mb),
+    max = max(stop_mb)
+  )
 
 # I am going to spooge these out in case they can be used later
 save(exons, greb, rock, file = "outputs/002/exons-greb-rock.rda")
@@ -849,7 +864,6 @@ fdiffs <- bind_rows(
 # get the nearly fixed ones so that we can plot them on top to make sure
 # they show up well.
 fdiffs_fixed <- fdiffs %>% filter(`diff > 0.98` == TRUE)
-
 ```
 
 
@@ -868,36 +882,50 @@ genes <- tibble(
   text_x = c(greb$min - 0.005, rock$max + 0.005)
 )
 
-svf_ad_for_paper <- ggplot() + 
+svf_ad_for_paper <- ggplot() +
   annotate("rect", xmin = 12.26, xmax = 12.29, ymin = -Inf, ymax = Inf, fill = "pink", alpha = 0.6) +
-  facet_wrap(~ comparison, ncol = 1, scales = "free_y") +
-  geom_point(data = fdiffs, 
-             mapping = aes(x = position / 1e06, y = abs_diff, colour = `diff > 0.98`,
-                                       alpha = `diff > 0.98`),
-             size = 0.9) +
-  geom_rect(data = exons,
-            mapping = aes(xmin = start_mb, xmax = stop_mb, ymin = -0.20, ymax = -0.04),
-            fill = "darkviolet") +
+  facet_wrap(~comparison, ncol = 1, scales = "free_y") +
+  geom_point(
+    data = fdiffs,
+    mapping = aes(
+      x = position / 1e06, y = abs_diff, colour = `diff > 0.98`,
+      alpha = `diff > 0.98`
+    ),
+    size = 0.9
+  ) +
+  geom_rect(
+    data = exons,
+    mapping = aes(xmin = start_mb, xmax = stop_mb, ymin = -0.20, ymax = -0.04),
+    fill = "darkviolet"
+  ) +
   ylab("Absolute allele frequency difference,\nspring-run vs. fall-run") +
   xlab("Position on Chromosome 28 (Mb)") +
   theme_bw() +
   scale_color_manual(values = c("gray", "black")) +
   scale_alpha_manual(values = c(0.3, 1.0)) +
-  geom_point(data = fdiffs_fixed, 
-             mapping = aes(x = position / 1e06, y = abs_diff, colour = `diff > 0.98`,
-                                       alpha = `diff > 0.98`),
-             colour = "black", alpha = 1.0, size = 0.9) + # plot the black ones on top
-  guides(color = guide_legend(title = "Frequency difference\ngreater than 0.98"),
-         alpha = FALSE) +
+  geom_point(
+    data = fdiffs_fixed,
+    mapping = aes(
+      x = position / 1e06, y = abs_diff, colour = `diff > 0.98`,
+      alpha = `diff > 0.98`
+    ),
+    colour = "black", alpha = 1.0, size = 0.9
+  ) + # plot the black ones on top
+  guides(
+    color = guide_legend(title = "Frequency difference\ngreater than 0.98"),
+    alpha = FALSE
+  ) +
   scale_x_continuous(breaks = seq(11.6, 12.9, by = 0.1), limits = c(11.6, 12.9)) +
   geom_hline(yintercept = 0) +
   scale_y_continuous(labels = c("0.00", "0.25", "0.50", "0.75", "1.00"), breaks = c(0.00, 0.25, 0.50, 0.75, 1.00)) +
   theme(legend.position = "none") +
-  theme(strip.background = element_blank(),
-        panel.border = element_rect(colour = "black")) +
+  theme(
+    strip.background = element_blank(),
+    panel.border = element_rect(colour = "black")
+  ) +
   geom_segment(data = genes, aes(x = min, xend = max), y = -0.12, yend = -0.12, colour = "darkviolet", size = 1.5) +
   geom_text(data = genes, aes(label = text, x = text_x, hjust = hjust), y = -0.12, vjust = 0.5, size = 3.2)
-  
+
 # now, save the plot for later
 write_rds(svf_ad_for_paper, path = "outputs/002/ggplot_svf_ad_for_paper.rds", compress = "xz")
 
@@ -918,19 +946,21 @@ mh_avr_plot_squat <- mh_avr_plot +
 # get the zoomed in one, too
 svf_ad_for_paper <- read_rds(path = "outputs/002/ggplot_svf_ad_for_paper.rds") +
   ylab("Absolute allele\nfrequency difference") +
-  guides(color = guide_legend(title = "Difference\n  > 0.98"),
-         alpha = FALSE)
+  guides(
+    color = guide_legend(title = "Difference\n  > 0.98"),
+    alpha = FALSE
+  )
 
 library(cowplot)
 
-figure_2 <- plot_grid(mh_avr_plot_squat, 
-                      svf_ad_for_paper, 
-                      nrow = 2, 
-                      labels = c("A", "B"), rel_heights = c(.4, .6))
+figure_2 <- plot_grid(mh_avr_plot_squat,
+  svf_ad_for_paper,
+  nrow = 2,
+  labels = c("A", "B"), rel_heights = c(.4, .6)
+)
 
 ggsave(figure_2, filename = "outputs/002/allele-frequencies.pdf", height = 6, width = 7)
 ggsave(figure_2, filename = "outputs/002/allele-frequencies.png", height = 6, width = 7)
-
 ```
 
 # Session Info
@@ -949,4 +979,3 @@ Sys.time() - start_time
 
 
 # Citations
-

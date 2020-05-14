@@ -1,17 +1,16 @@
 ---
 title: "Thompson et. al. 2020, Data and Code Repository"
-author: "Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza"
+author: "Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza"
 output: 
-  github_document:
-    toc: true
-    toc_depth: 3
   html_document:
     toc: true
     toc_float: true
     toc_depth: 3
+  github_document:
+    toc: true
+    toc_depth: 3
 bibliography: references.bib
 ---
-
 
 **Last Updated:** `r Sys.Date()`
 
@@ -27,7 +26,7 @@ Dbase <- "./"
 
 # choose the one that you want here depending on if you are on the
 # GitHub README or are making an index.html for the docs directory
-hdir <- GPbase
+hdir <- Dbase
 
 make_link <- function(Rmd, base = hdir) {
   nb <- stringr::str_replace(Rmd, "Rmd$", "html")
@@ -36,6 +35,7 @@ make_link <- function(Rmd, base = hdir) {
 ```
 
 [![DOI](https://zenodo.org/badge/263405637.svg)](https://zenodo.org/badge/latestdoi/263405637)
+
 
 This repository includes code, data, and some intermediate results to
 reproduce the results in Thompson et al. ("A complex phenotype in salmon
@@ -47,6 +47,7 @@ If you are viewing this as the README of a GitHub repository, note that
 you can read it in a somewhat friendlier format (i.e., with a table
 of contents, etc.) on GitHub pages at:
 [https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/](https://eriqande.github.io/thompson-et-al-2020-chinook-salmon-migration-timing/)
+
 
 For the whole-genome resequencing data, the production of BAMs and VCFs from the original FASTQ files follows a
 standard bwa/GATK pipeline as described in the supplemental methods.  Here we focus on analyses
@@ -173,8 +174,10 @@ Unzip that directory into one called `California_Streams` and move or symlink th
 ## Unix Programs
 
 The following programs must be installed and available in the PATH. Versions 
-we used appear in parentheses.
+used on Eric's laptop appear in parentheses.
 
+* [`angsd`](http://www.popgen.dk/angsd/index.php/ANGSD) (Version: 0.920, using htslib: 1.6)
+* [`bwa`](https://github.com/lh3/bwa) (Version: 0.7.16a-r1181)
 * [`samtools`](http://www.htslib.org/) (Version: 1.3, using htslib 1.3)
 * [`bcftools`](http://www.htslib.org/) (Version: 1.9, using htslib 1.9)
 * [`bgzip`, `tabix`](http://www.htslib.org/) (Version 1.6) These are found within the htslib library.
@@ -183,7 +186,7 @@ we used appear in parentheses.
 * [`PHASE`](http://stephenslab.uchicago.edu/phase/download.html) (Version 2.1.1)
 * [`lastz`](http://www.bx.psu.edu/~rsharris/lastz/) (Version 1.04) This was obtained and compiled thus:
     ```{sh, eval=FALSE}
-    wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.03.tar.gz # slightly older version that originally used on my Mac
+    wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.03.tar.gz # slightly older version than originally used on my Mac
     gunzip lastz-1.04.03.tar.gz
     tar -xvf lastz-1.04.03.tar
     cd lastz-distrib-1.04.03/
@@ -230,7 +233,7 @@ Version 4.3 with a release data of 24 November 2017.  THis is the version we use
 2. Expand that zip archive and move the resulting directory into  
 the top level of this repository.  When you are done, you should be
 able to `ls` the Jar file like this:
-```{sh, eval=FALSE}
+```{sh}
 ls snpEff_v4_3t_core/snpEff/snpEff.jar 
 ```
 

@@ -79,23 +79,24 @@ can be interpreted correctly by PHASE.
 halflotype <- function(x, side = 1) {
   repl_1 <- c(M = "M", P = "P", H = "M", `?` = "?")
   repl_2 <- c(M = "M", P = "P", H = "P", `?` = "?")
-  
+
   if (side == 1) {
     repl <- repl_1
-  } else { 
+  } else {
     repl <- repl_2
   }
   unname(repl[x])
 }
 
 halflos <- RPGD %>%
-  mutate(prince_vec = strsplit(prince, ""),
-         rosa_vec = str_split(rosa, ""),
-         prince1 = map(prince_vec, ~ halflotype(., 1)),
-         prince2 = map(prince_vec, ~ halflotype(., 2)),
-         rosa1 = map(rosa_vec, ~ halflotype(., 1)),
-         rosa2 = map(rosa_vec, ~ halflotype(., 2)),
-         )
+  mutate(
+    prince_vec = strsplit(prince, ""),
+    rosa_vec = str_split(rosa, ""),
+    prince1 = map(prince_vec, ~ halflotype(., 1)),
+    prince2 = map(prince_vec, ~ halflotype(., 2)),
+    rosa1 = map(rosa_vec, ~ halflotype(., 1)),
+    rosa2 = map(rosa_vec, ~ halflotype(., 2)),
+  )
 ```
 
 
@@ -103,12 +104,14 @@ halflos <- RPGD %>%
 ```{r}
 h2 <- halflos %>%
   gather("reg_hap", "halflo", rosa1, rosa2, prince1, prince2) %>%
-  mutate(region = str_replace(reg_hap, "[12]", ""),
-         num_miss = map_int(halflo, ~ sum(. == "?")))
+  mutate(
+    region = str_replace(reg_hap, "[12]", ""),
+    num_miss = map_int(halflo, ~ sum(. == "?"))
+  )
 
 ggplot(h2, aes(x = num_miss)) +
-  geom_histogram(breaks = (0:11) - 0.5) + 
-  facet_wrap(~ region) +
+  geom_histogram(breaks = (0:11) - 0.5) +
+  facet_wrap(~region) +
   scale_x_continuous(breaks = 0:10)
 ```
 This is telling us that it make sense to ditch any
@@ -121,7 +124,6 @@ halflo_filt <- h2 %>%
   group_by(Indiv) %>%
   filter(all(num_miss <= 1)) %>%
   ungroup()
-    
 ```
 
 
@@ -139,8 +141,8 @@ for_phase <- halflo_filt %>%
   group_by(Pop) %>%
   nest() %>%
   mutate(num_fish = map_int(data, nrow)) %>%
-  filter(!is.na(Pop) & num_fish > 5)  # filter out any unknown pops and any groups without many fish fish
-  
+  filter(!is.na(Pop) & num_fish > 5) # filter out any unknown pops and any groups without many fish fish
+
 for_phase
 ```
 
@@ -171,25 +173,22 @@ write_phase_input <- function(dirname, D) {
   cat(nrow(D), "\n", 13, "\n", sep = "", file = outf)
   cat("P ", var_poses, "\n", sep = " ", file = outf, append = TRUE)
   cat(rep("S", 13), "\n", sep = "", file = outf, append = TRUE)
-  
+
   write_ind <- function(Indiv, prince1, prince2, rosa1, rosa2, ...) {
-    
     cat(Indiv, "\n", file = outf, append = TRUE)
     cat(c(prince1, rosa1), "\n", sep = " ", file = outf, append = TRUE)
     cat(c(prince2, rosa2), "\n", sep = " ", file = outf, append = TRUE)
-    
   }
-  
+
   pwalk(D, write_ind)
-  
+
   # and now return the command one should use to run it
-  str_c("cd ", dirname(outf), "; /Users/eriq/Documents/others_code/PHASE2.1.1/PHASE -S", floor(runif(1, 2, 10000)), " input.txt output 500 1 500 > stdout 2> stderr;")
+  str_c("cd ", dirname(outf), "; PHASE -S", floor(runif(1, 2, 10000)), " input.txt output 500 1 500 > stdout 2> stderr;")
 }
 
 set.seed(110) # for reproducibility (sets seeds for PHASE...)
 fp_wcall <- for_phase %>%
-  mutate(call = map2_chr(.x = Pop, .y = data, ~write_phase_input(.x, .y)))
-
+  mutate(call = map2_chr(.x = Pop, .y = data, ~ write_phase_input(.x, .y)))
 ```
 
 That set everything up, now let's run it:
@@ -212,25 +211,32 @@ summarized <- phase_results %>%
   select(Pop, num_fish, freqs) %>%
   unnest(cols = c(freqs)) %>%
   select(-index) %>%
-  mutate(distal_region = str_sub(haplotype, 1, 5),
-         rosa_region = str_sub(haplotype, 6, 14)) %>%
+  mutate(
+    distal_region = str_sub(haplotype, 1, 5),
+    rosa_region = str_sub(haplotype, 6, 14)
+  ) %>%
   select(Pop, num_fish, distal_region, rosa_region, `E(freq)`, S.E) %>%
-  filter(`E(freq)` >= 0.01)  # filter out low frequency haplotypes, but let's try not doing it...
+  filter(`E(freq)` >= 0.01) # filter out low frequency haplotypes, but let's try not doing it...
 
 write_csv(summarized, "intermediates/011/haplo-freqs-unfiltered.csv")
 
 # hey! Let's format that for a table with Es and Ls
 hap_freqs <- read_csv("intermediates/011/haplo-freqs-unfiltered.csv") %>%
-  mutate(distal_region = str_replace_all(distal_region, "P", "E") %>% str_replace_all(., "M", "L"),
-         rosa_region = str_replace_all(rosa_region, "P", "E") %>% str_replace_all(., "M", "L")
-         ) %>%
-  rename(Location = Pop,
-         `Distal Region` = distal_region,
-         `RoSA Region` = rosa_region,
-         Freq = `E(freq)`,
-         S.E. = S.E) %>%
-  mutate(Freq = sprintf("%.3f", Freq),
-         S.E. = sprintf("%.6f", S.E.)) %>%
+  mutate(
+    distal_region = str_replace_all(distal_region, "P", "E") %>% str_replace_all(., "M", "L"),
+    rosa_region = str_replace_all(rosa_region, "P", "E") %>% str_replace_all(., "M", "L")
+  ) %>%
+  rename(
+    Location = Pop,
+    `Distal Region` = distal_region,
+    `RoSA Region` = rosa_region,
+    Freq = `E(freq)`,
+    S.E. = S.E
+  ) %>%
+  mutate(
+    Freq = sprintf("%.3f", Freq),
+    S.E. = sprintf("%.6f", S.E.)
+  ) %>%
   left_join(read_tsv("data/collection-name-modify.tsv"), by = "Location") %>%
   select(`Collection location`, ESU, everything()) %>%
   select(-Location) %>%
@@ -261,10 +267,10 @@ sf_freqs <- summarized %>%
     TRUE ~ "A"
   )) %>%
   mutate(rosa_SF_type = case_when(
-    rosa_region == "MMMMMMMM" ~ "L", 
+    rosa_region == "MMMMMMMM" ~ "L",
     rosa_region == "PPPPPPPP" ~ "E",
     TRUE ~ "A"
-  ))  %>%
+  )) %>%
   mutate(compo = str_c(distal_SF_type, rosa_SF_type, sep = "/")) %>%
   group_by(Pop, compo) %>%
   summarize(freq = sum(`E(freq)`)) %>%
@@ -277,7 +283,10 @@ sf_freqs
 ```{r}
 # let's format that nicely for output
 tmp <- sf_freqs %>%
-  mutate_at(vars(-Pop), function(x) {y <- ifelse(is.na(x), 0, x); sprintf("%.2f", y)}) %>%
+  mutate_at(vars(-Pop), function(x) {
+    y <- ifelse(is.na(x), 0, x)
+    sprintf("%.2f", y)
+  }) %>%
   left_join(., summarized %>% distinct(Pop, num_fish)) %>%
   select(Pop, num_fish, everything()) %>%
   rename(N = num_fish)
@@ -293,8 +302,6 @@ tmp_sorted <- tmp %>%
 
 # now, write that out to paste into the google doc
 write_csv(tmp_sorted, "outputs/011/haplo-freqs-to-paste-into-google-doc.csv")
-
-
 ```
 
 # Session Info

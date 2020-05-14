@@ -257,7 +257,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">Salmon River Carcass Analyses</h1>
 <h4 class="author">Eric C. Anderson</h4>
-<h4 class="date">Last Updated: 2020-05-11</h4>
+<h4 class="date">Last Updated: 2020-05-14</h4>
 
 </div>
 
@@ -279,9 +279,9 @@ dir.create(&quot;outputs/010&quot;, recursive = TRUE, showWarnings = FALSE)</cod
 <h2>Get the watershed boundaries</h2>
 <pre class="r"><code># grab and filter to the KLAMATH, and within that the Salmon River
 salmon_bas &lt;- st_read(&quot;geo-spatial/GISlayers_calw221_shp/calw221.shp&quot;) %&gt;%
-  filter(str_detect(HUNAME, &quot;KLAMATH&quot;)) %&gt;%  # get just Klamath Basin
-  filter(HANAME == &quot;Salmon River&quot;) %&gt;%       # narrow it down to just Salmon River
-  st_union() %&gt;%         # Keep just the outer basin boundary (not the trib basins within) 
+  filter(str_detect(HUNAME, &quot;KLAMATH&quot;)) %&gt;% # get just Klamath Basin
+  filter(HANAME == &quot;Salmon River&quot;) %&gt;% # narrow it down to just Salmon River
+  st_union() %&gt;% # Keep just the outer basin boundary (not the trib basins within)
   st_transform(crs = 4326)</code></pre>
 <pre><code>## Reading layer `calw221' from data source `/Users/eriq/Documents/MapStuff/GISlayers_calw221_shp/calw221.shp' using driver `ESRI Shapefile'
 ## Simple feature collection with 7035 features and 38 fields
@@ -296,8 +296,8 @@ salmon_bas &lt;- st_read(&quot;geo-spatial/GISlayers_calw221_shp/calw221.shp&quo
 <div id="get-the-stream-lines" class="section level2">
 <h2>Get the stream lines</h2>
 <pre class="r"><code>salmon_riv &lt;- st_read(&quot;geo-spatial/California_Streams/California_Streams.shp&quot;) %&gt;%
-   filter((str_detect(Hydrolog_1, &quot;Klamath&quot;) &amp; str_detect(Name, &quot;Salmon&quot;)) |
-            Hydrolog_2 == 18010210 &amp; str_detect(Name, &quot;Salmon&quot;))</code></pre>
+  filter((str_detect(Hydrolog_1, &quot;Klamath&quot;) &amp; str_detect(Name, &quot;Salmon&quot;)) |
+    Hydrolog_2 == 18010210 &amp; str_detect(Name, &quot;Salmon&quot;))</code></pre>
 <pre><code>## Reading layer `California_Streams' from data source `/Users/eriq/Documents/MapStuff/California_Streams/California_Streams.shp' using driver `ESRI Shapefile'
 ## Simple feature collection with 740662 features and 21 fields
 ## geometry type:  LINESTRING
@@ -308,7 +308,7 @@ salmon_bas &lt;- st_read(&quot;geo-spatial/GISlayers_calw221_shp/calw221.shp&quo
 write_rds(salmon_riv, path = &quot;stored_results/010/salmon_riv.rds&quot;, compress = &quot;xz&quot;)
 
 # if you couldn't get California_Streams, that is OK,  just uncomment the following line:
-#salmon_riv &lt;- read_rds(path = &quot;stored_results/010/salmon_riv.rds&quot;)
+# salmon_riv &lt;- read_rds(path = &quot;stored_results/010/salmon_riv.rds&quot;)
 
 # plot it to make sure it looks right.
 plot(st_geometry(salmon_riv))</code></pre>
@@ -335,22 +335,24 @@ plot(st_geometry(salmon_riv))</code></pre>
 <p>Make a tibble has the hi and lo values for the reaches in miles, and then we can pick all of those out.</p>
 <p>This block hangs, sometimes, when evaluated in the notebook. So, I’ve set eval=FALSE, and just have it read the result. But the code that generates it is all there.</p>
 <pre class="r"><code>reach_spec &lt;- read_csv(&quot;data/salmon_river_reaches.csv&quot;) %&gt;%
-   mutate(reach_lo = units::set_units(reach_lo, mile),
-          reach_hi = units::set_units(reach_hi, mile))
- 
+  mutate(
+    reach_lo = units::set_units(reach_lo, mile),
+    reach_hi = units::set_units(reach_hi, mile)
+  )
+
 # now join those onto the geometries and then chop each part of them
 # out of the respective tribs/rivers
 units::units_options(allow_mixed = TRUE)
 reach_geos &lt;- reach_spec %&gt;%
-   left_join(salmon_riv, by = &quot;Name&quot;) %&gt;%
-   mutate(geometry2 = mclapply(1:n(), 
-                               function(i) line_seg_by_distance(geometry[i], reach_lo[[i]], reach_hi[[i]], asSFC = FALSE),
-                               mc.cores = 8
-                               ))
- 
+  left_join(salmon_riv, by = &quot;Name&quot;) %&gt;%
+  mutate(geometry2 = mclapply(1:n(),
+    function(i) line_seg_by_distance(geometry[i], reach_lo[[i]], reach_hi[[i]], asSFC = FALSE),
+    mc.cores = 8
+  ))
+
 survey_reaches &lt;- reach_geos %&gt;%
-   mutate(geometry = st_sfc(reach_geos$geometry2, crs = st_crs(reach_geos))) %&gt;%
-   select(-geometry2)
+  mutate(geometry = st_sfc(reach_geos$geometry2, crs = st_crs(reach_geos))) %&gt;%
+  select(-geometry2)
 
 write_rds(survey_reaches, path = &quot;stored_results/010/survey_reaches.rds&quot;, compress = &quot;xz&quot;)</code></pre>
 <pre class="r"><code>survey_reaches &lt;- read_rds(path = &quot;stored_results/010/survey_reaches.rds&quot;)</code></pre>
@@ -392,15 +394,17 @@ g</code></pre>
 <p>We also record whether the carcass was recorded with a REACH where it was found.</p>
 <pre class="r"><code>expando_rosa &lt;- read_rds(&quot;data/salmon_river_spatiotemporal_rosa_data.rds&quot;) %&gt;%
   mutate(Year = year(COLLECTION_DATE)) %&gt;%
-  mutate(gcomp = str_remove_all(hapstr, &quot;\\?&quot;),
-         gcvec = strsplit(gcomp, &quot;&quot;),
-         called_geno = case_when(
-           nchar(gcomp) &gt;=2 &amp; sapply(gcvec, function(x) all(x == &quot;P&quot;)) ~ &quot;S&quot;,
-           nchar(gcomp) &gt;=2 &amp; sapply(gcvec, function(x) all(x == &quot;M&quot;)) ~ &quot;F&quot;,
-           nchar(gcomp) &gt;=2 &amp; sapply(gcvec, function(x) all(x == &quot;H&quot;)) ~ &quot;H&quot;,
-           nchar(gcomp) &gt;=2 &amp; (map_int(gcvec, n_distinct) &gt;= 2) ~ &quot;A&quot;,
-           TRUE ~ &quot;M&quot;
-         )) %&gt;%
+  mutate(
+    gcomp = str_remove_all(hapstr, &quot;\\?&quot;),
+    gcvec = strsplit(gcomp, &quot;&quot;),
+    called_geno = case_when(
+      nchar(gcomp) &gt;= 2 &amp; sapply(gcvec, function(x) all(x == &quot;P&quot;)) ~ &quot;S&quot;,
+      nchar(gcomp) &gt;= 2 &amp; sapply(gcvec, function(x) all(x == &quot;M&quot;)) ~ &quot;F&quot;,
+      nchar(gcomp) &gt;= 2 &amp; sapply(gcvec, function(x) all(x == &quot;H&quot;)) ~ &quot;H&quot;,
+      nchar(gcomp) &gt;= 2 &amp; (map_int(gcvec, n_distinct) &gt;= 2) ~ &quot;A&quot;,
+      TRUE ~ &quot;M&quot;
+    )
+  ) %&gt;%
   mutate(RoSA_genotype = recode_factor(called_geno,
     &quot;S&quot; = &quot;EE&quot;,
     &quot;H&quot; = &quot;EL&quot;,
@@ -408,7 +412,7 @@ g</code></pre>
     &quot;A&quot; = &quot;Ambiguous&quot;,
     &quot;M&quot; = &quot;Missing&quot;
   )) %&gt;%
-  mutate(HasReach = (!is.na(REACH_SITE) &amp; REACH_SITE != &quot;Cecilville&quot;)) %&gt;%  # Cecilville is not a valid reach and all of those have a lat-long that we will use.
+  mutate(HasReach = (!is.na(REACH_SITE) &amp; REACH_SITE != &quot;Cecilville&quot;)) %&gt;% # Cecilville is not a valid reach and all of those have a lat-long that we will use.
   arrange(NMFS_DNA_ID, desc(nchar(gcomp))) %&gt;%
   group_by(NMFS_DNA_ID) %&gt;%
   mutate(rank = 1:n()) %&gt;%
@@ -418,8 +422,10 @@ g</code></pre>
 <p>Read in extra meta-data that goes with those, so we can do lats and longs if they have them.</p>
 <pre class="r"><code>expando_meta &lt;- read_csv(&quot;data/SalmonRiver_RoSA_genotype_full_table_meta.csv&quot;) %&gt;%
   select(NMFS_DNA_ID, LATITUDE_F, LONGITUDE_F) %&gt;%
-  rename(Lat = LATITUDE_F,
-         Long = LONGITUDE_F) %&gt;%
+  rename(
+    Lat = LATITUDE_F,
+    Long = LONGITUDE_F
+  ) %&gt;%
   mutate(HasLatLong = ifelse(is.na(Lat), FALSE, TRUE))</code></pre>
 </div>
 <div id="add-lat-longs-where-they-are-available" class="section level2">
@@ -461,7 +467,7 @@ write_csv(yprg_s, path = &quot;outputs/010/SalmonRiver_RoSA_genotype_counts.csv&
   lapply(L, function(x) {
     mat &lt;- unclass(x)
     r &lt;- sample(1:nrow(mat), 1)
-    x[r,]
+    x[r, ]
   })
 }</code></pre>
 <p>Now…</p>
@@ -472,26 +478,32 @@ has_R &lt;- expando_r_latlong %&gt;%
 # these don't
 no_R_LL &lt;- expando_r_latlong %&gt;%
   filter(HasReach == FALSE, HasLatLong == TRUE) %&gt;%
-  mutate(rLat = Lat, rLong = Long)  # populate the rLat and rLong fields with the same values in these cases
+  mutate(rLat = Lat, rLong = Long) # populate the rLat and rLong fields with the same values in these cases
 
 set.seed(100)
 tmp &lt;- has_R %&gt;%
-  mutate(reach = str_replace_all(REACH_SITE, &quot;[Rr]each &quot;, &quot;&quot;),
-         reach = ifelse(nchar(reach) &lt; 5, reach, NA)) %&gt;% # the wipes out the Cecilvilles...they all have LatLong info.
-  left_join(survey_reaches, by = &quot;reach&quot;) 
+  mutate(
+    reach = str_replace_all(REACH_SITE, &quot;[Rr]each &quot;, &quot;&quot;),
+    reach = ifelse(nchar(reach) &lt; 5, reach, NA)
+  ) %&gt;% # the wipes out the Cecilvilles...they all have LatLong info.
+  left_join(survey_reaches, by = &quot;reach&quot;)
 
 # grab the five fish in reach 1.  We have a lat-long location for that and we will
 # just manually put the Reach 1 fish in there at that spot, and then wiggle it.
 Reach1_fish &lt;- tmp %&gt;%
   filter(reach == 1) %&gt;%
-  mutate(rLat = 41.377819,
-         rLong = -123.430) 
+  mutate(
+    rLat = 41.377819,
+    rLong = -123.430
+  )
 
 has_R_LL &lt;- tmp %&gt;%
-  filter(sapply(geometry, function(x) nrow(x) &gt; 0))  %&gt;%    # some geometries were missing
+  filter(sapply(geometry, function(x) nrow(x) &gt; 0)) %&gt;% # some geometries were missing
   mutate(rando_point = rando_pt_from_linestring(geometry)) %&gt;%
-  mutate(rLong = map_dbl(rando_point, function(x) x[&quot;X&quot;]),
-         rLat = map_dbl(rando_point, function(x) x[&quot;Y&quot;])) 
+  mutate(
+    rLong = map_dbl(rando_point, function(x) x[&quot;X&quot;]),
+    rLat = map_dbl(rando_point, function(x) x[&quot;Y&quot;])
+  )
 
 # now pick out from that only the non-geometry columns
 has_R_LL_pick &lt;- has_R_LL[, c(names(no_R_LL), &quot;rLat&quot;, &quot;rLong&quot;)]
@@ -516,9 +528,11 @@ m9 &lt;- ggplot() +
   geom_sf(data = salmon_bas, fill = &quot;#e5f5e0&quot;) +
   geom_sf(data = salmon_riv, colour = &quot;gray&quot;) +
   scale_colour_manual(values = c(&quot;#a6bddb&quot;, &quot;black&quot;)) +
-  theme_bw() + 
-  geom_jitter(data = LL_by_reach_or_coords, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = &quot;black&quot;,
-              size = 2.5, width = .02, height = .02) +
+  theme_bw() +
+  geom_jitter(
+    data = LL_by_reach_or_coords, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = &quot;black&quot;,
+    size = 2.5, width = .02, height = .02
+  ) +
   geom_sf(data = surv_reaches_lettered, aes(geometry = geometry, colour = reach_alt), show.legend = FALSE) +
   scale_fill_manual(values = c(
     `LL` = &quot;blue&quot;,
@@ -527,7 +541,7 @@ m9 &lt;- ggplot() +
     `Ambiguous` = &quot;red&quot;,
     `Missing` = &quot;black&quot;
   )) +
-  facet_wrap(~ RoSA_genotype, ncol = 2) +
+  facet_wrap(~RoSA_genotype, ncol = 2) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
   xlab(&quot;Longitude&quot;) +
   ylab(&quot;Latitude&quot;) +
@@ -555,9 +569,11 @@ m15 &lt;- ggplot() +
   geom_sf(data = salmon_bas, fill = &quot;#e5f5e0&quot;) +
   geom_sf(data = salmon_riv, colour = &quot;gray&quot;) +
   scale_colour_manual(values = c(&quot;#a6bddb&quot;, &quot;black&quot;)) +
-  theme_bw() + 
-  geom_jitter(data = alls_2006_weeked, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = &quot;black&quot;,
-              size = 2.5, width = .02, height = .02) +
+  theme_bw() +
+  geom_jitter(
+    data = alls_2006_weeked, aes(x = rLong, y = rLat, fill = RoSA_genotype), shape = 21, stroke = 0.3, colour = &quot;black&quot;,
+    size = 2.5, width = .02, height = .02
+  ) +
   geom_sf(data = surv_reaches_lettered, aes(geometry = geometry, colour = reach_alt), show.legend = FALSE) +
   scale_fill_manual(values = c(
     `LL` = &quot;blue&quot;,
@@ -587,14 +603,16 @@ ggsave(m15, filename = &quot;outputs/010/salmon-river-spatiotemporal-map-2006.pd
 # then lump all the &quot;populations&quot; together in each year and compute observed frequencies
 # as well as expected frequencies under HWE
 fhwe_tots &lt;- for_hwe %&gt;%
-  group_by(Year, RoSA_genotype, .drop = FALSE) %&gt;%  # .drop = FALSE to get explicit 0's
+  group_by(Year, RoSA_genotype, .drop = FALSE) %&gt;% # .drop = FALSE to get explicit 0's
   summarise(N = sum(n)) %&gt;%
-  mutate(freq = N / sum(N),
-         NS = 2 * N[RoSA_genotype == &quot;EE&quot;] + N[RoSA_genotype == &quot;EL&quot;],
-         NF = 2 * N[RoSA_genotype == &quot;LL&quot;] + N[RoSA_genotype == &quot;EL&quot;],
-         fS = NS / (NS + NF),
-         fF = NF / (NS + NF)) %&gt;%
-  mutate(hwe_exp_freq = c(fS[1] ^ 2, 2 * fF[1] * fS[1], fF[1] ^ 2)) %&gt;%
+  mutate(
+    freq = N / sum(N),
+    NS = 2 * N[RoSA_genotype == &quot;EE&quot;] + N[RoSA_genotype == &quot;EL&quot;],
+    NF = 2 * N[RoSA_genotype == &quot;LL&quot;] + N[RoSA_genotype == &quot;EL&quot;],
+    fS = NS / (NS + NF),
+    fF = NF / (NS + NF)
+  ) %&gt;%
+  mutate(hwe_exp_freq = c(fS[1]^2, 2 * fF[1] * fS[1], fF[1]^2)) %&gt;%
   mutate(hwe_exp_n = hwe_exp_freq * sum(N))</code></pre>
 <p>Now, make a table of the relevant numbers here:</p>
 <pre class="r"><code>hwetab &lt;- fhwe_tots %&gt;%
@@ -610,14 +628,16 @@ hwetab</code></pre>
 <pre class="r"><code>hwefig &lt;- ggplot(hwetab %&gt;% filter(Year &gt; 1997 &amp; Year != 2014)) +
   geom_col(aes(x = RoSA_genotype, y = N, fill = RoSA_genotype)) +
   geom_col(aes(x = RoSA_genotype, y = hwe_exp_n), fill = NA, colour = &quot;green&quot;, size = 0.5) +
-  geom_col(aes(x = RoSA_genotype, y = hwe_exp_n), fill = NA, colour = &quot;black&quot;, size = 0.5,
-           linetype = &quot;dashed&quot;) + 
+  geom_col(aes(x = RoSA_genotype, y = hwe_exp_n),
+    fill = NA, colour = &quot;black&quot;, size = 0.5,
+    linetype = &quot;dashed&quot;
+  ) +
   scale_fill_manual(values = c(
     `LL` = &quot;blue&quot;,
     `EE` = &quot;gold&quot;,
     `EL` = &quot;tan2&quot;
   )) +
-  facet_wrap(~ Year, nrow = 1) +
+  facet_wrap(~Year, nrow = 1) +
   theme_bw()
 
 
@@ -636,7 +656,7 @@ ggsave(hwefig, filename = &quot;outputs/010/salmon-river_hwe_counts-3-panel.pdf&
 ##  collate  en_US.UTF-8                 
 ##  ctype    en_US.UTF-8                 
 ##  tz       America/Denver              
-##  date     2020-05-11                  
+##  date     2020-05-14                  
 ## 
 ## ─ Packages ───────────────────────────────────────────────────────────────────
 ##  package     * version date       lib source        
@@ -714,7 +734,7 @@ ggsave(hwefig, filename = &quot;outputs/010/salmon-river_hwe_counts-3-panel.pdf&
 <h1>Running Time</h1>
 <p>Running the code and rendering this notebook required approximately this much time on a Mac laptop of middling speed:</p>
 <pre class="r"><code>Sys.time() - start_time</code></pre>
-<pre><code>## Time difference of 52.03335 secs</code></pre>
+<pre><code>## Time difference of 50.76669 secs</code></pre>
 <div class="references">
 <h1>Citations</h1>
 </div>

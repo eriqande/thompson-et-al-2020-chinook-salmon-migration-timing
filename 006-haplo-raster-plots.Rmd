@@ -43,10 +43,10 @@ we produced, you will want to use the stored results from 004.
 ```{r}
 USE_STORED_BIG_HAPS <- FALSE
 
-if(USE_STORED_BIG_HAPS != TRUE) {
+if (USE_STORED_BIG_HAPS != TRUE) {
   big_haps2 <- read_rds(path = "outputs/004/big_haps2.rds")
   jc_fish <- read_rds(path = "outputs/004/jc_fish_haps.rds")
-  
+
   # Make a data frame with everyone, Johnson Creek included:
   big_haps2_jc <- bind_rows(big_haps2, jc_fish)
 } else {
@@ -55,7 +55,6 @@ if(USE_STORED_BIG_HAPS != TRUE) {
 }
 
 haps_fix <- read_rds(path = "outputs/004/big_haps2_fixed_info.rds")
-
 ```
 
 # First compile auxiliary genome features
@@ -73,34 +72,32 @@ bedtools intersect -a intermediates/006/one-sample-vcf-greb1l-ish.vcf.gz  -b gen
 Then read that into a tibble
 ```{r}
 snp_anno <- read_tsv("intermediates/006/variant-annotations.tsv",
-                     col_names = c(
-                       "CHROM", 
-                       "POS",
-                       "dot1",
-                       "REF",
-                       "ALT",
-                       "VSCORE",
-                       "dot2",
-                       "dot3",
-                       "format",
-                       "a_sample",
-                       "CHROM2",
-                       "method",
-                       "what",
-                       "start",
-                       "stop",
-                       "dot4",
-                       "strand",
-                       "phase",
-                       "biggie"
-                     ))
+  col_names = c(
+    "CHROM",
+    "POS",
+    "dot1",
+    "REF",
+    "ALT",
+    "VSCORE",
+    "dot2",
+    "dot3",
+    "format",
+    "a_sample",
+    "CHROM2",
+    "method",
+    "what",
+    "start",
+    "stop",
+    "dot4",
+    "strand",
+    "phase",
+    "biggie"
+  )
+)
 
 # look at what we have here
 snp_anno %>%
   count(what)
-
-
-
 ```
 
 So, for a quick visualization, I am first going to classify
@@ -109,13 +106,13 @@ sites as belonging to genes, pseudo-genes, or non-genes.
 Subsequently, I will classify things within genes as exon, CDS, or other.
 ```{r}
 gene_stuff_func <- function(what) {
-    if(any(what == "gene")) {
-      ret <- "gene";
-    } else if (any(what == "pseudogene")) {
-      ret <- "pseudogene"
-    } else {
-      ret <- "non-gene"
-    }
+  if (any(what == "gene")) {
+    ret <- "gene"
+  } else if (any(what == "pseudogene")) {
+    ret <- "pseudogene"
+  } else {
+    ret <- "non-gene"
+  }
   ret
 }
 gene_stuff <- snp_anno %>%
@@ -123,13 +120,13 @@ gene_stuff <- snp_anno %>%
   summarise(ginc = gene_stuff_func(what))
 
 exon_stuff_func <- function(what) {
-  if(any(what == "CDS")) {
-      ret <- "CDS";
-    } else if (any(what == "exon")) {
-      ret <- "exon"
-    } else {
-      ret <- "non-exon"
-    }
+  if (any(what == "CDS")) {
+    ret <- "CDS"
+  } else if (any(what == "exon")) {
+    ret <- "exon"
+  } else {
+    ret <- "non-exon"
+  }
   ret
 }
 
@@ -138,7 +135,6 @@ exon_stuff <- snp_anno %>%
   semi_join(gene_stuff %>% filter(ginc == "gene"), by = c("CHROM", "POS")) %>%
   group_by(CHROM, POS) %>%
   summarise(einc = exon_stuff_func(what))
-  
 ```
 
 ## Codon position of the SNPs that are in coding seqeunces
@@ -150,7 +146,7 @@ rather than synonymous/missense.
 
 First, get the SNPs in CDS
 ```{r}
-cds_snps <- snp_anno %>% 
+cds_snps <- snp_anno %>%
   filter(what == "CDS")
 ```
 
@@ -163,7 +159,7 @@ HiMod <- snpeff %>%
   filter(snp_eff_effect %in% c("MODERATE", "HIGH")) %>%
   select(CHROM, POS, snp_eff_effect, snp_eff_what)
 
-cds_snps <- cds_snps %>% 
+cds_snps <- cds_snps %>%
   mutate(syn_v_nonsyn_codon_pos = ifelse(POS %in% HiMod$POS, "codon_pos1", "codon_pos3"))
 ```
 
@@ -192,8 +188,10 @@ dna_tibble <- read_lines("intermediates/006/greb-ish-seq-chinook.fna.gz")[-1] %>
   paste(., collapse = "") %>%
   strsplit(., "") %>%
   .[[1]] %>%
-  tibble(POS = seq(9660000, 14830000, by = 1),
-         dna = .) %>%
+  tibble(
+    POS = seq(9660000, 14830000, by = 1),
+    dna = .
+  ) %>%
   mutate(inRep = dna %in% c("a", "c", "g", "t"))
 
 # now rollapply that dude in a 200 bp window centered on the current base
@@ -209,11 +207,12 @@ all those positions in the `data` directory.
 
 ```{r}
 h_pos_for_paper <- read_tsv("data/assay-positions.tsv") %>%
-  rename(name = Marker_name,
-         POS = Position_on_Chr_28_in_Otsh_v1.0) %>%
+  rename(
+    name = Marker_name,
+    POS = Position_on_Chr_28_in_Otsh_v1.0
+  ) %>%
   select(name, POS) %>%
   mutate(POS = as.integer(POS))
-
 ```
 
 # Calculations to order haplotypes by number of spring-alleles in the RoSA
@@ -229,13 +228,13 @@ rosa2 <- big_haps2 %>%
 While we are here quickly deduce the RoSA genotype of the reference fish, by focusing
 only on the SNPs from 12.26 to 12.29
 ```{r}
-rosa2 %>% 
+rosa2 %>%
   filter(POS > 12.26e6, POS < 12.29e6) %>%
-  group_by(POS, REF, ALT, spring_allele) %>% 
+  group_by(POS, REF, ALT, spring_allele) %>%
   tally() %>%
   select(-n) %>%
-  mutate(spring_is_ref = REF == spring_allele) %>% 
-  group_by(spring_is_ref) %>% 
+  mutate(spring_is_ref = REF == spring_allele) %>%
+  group_by(spring_is_ref) %>%
   tally()
 ```
 
@@ -250,7 +249,7 @@ Order everyone by number of springer alleles in there:
 rosa2_sorted <- rosa2 %>%
   group_by(haplo_name) %>%
   mutate(sumS = sum(alle2 == "S")) %>%
-  ungroup() %>% 
+  ungroup() %>%
   arrange(desc(sumS), haplo_name, POS)
 ```
 
@@ -263,7 +262,7 @@ then by springyness.  We make one order that includes the Johnson Creek
 fish, and then another one that does not (for the read depth raster).
 ```{r}
 # first, order by ecotype, and then within that, spring-run-assoc alleles
-htmp <-  rosa2_sorted %>% 
+htmp <- rosa2_sorted %>%
   mutate(hnames = haplo_name) %>%
   mutate(efact = factor(ecotype, levels = c("Spring", "Winter", "Late_Fall", "Fall"))) %>%
   arrange(efact, desc(sumS))
@@ -311,11 +310,12 @@ annotation_columns <- rosa2_sorted %>%
   count(hnames, lineage, ecotype, pop) %>%
   select(-n) %>%
   gather(key = "column", value = "value", -hnames) %>%
-  mutate(width = 0.015,
-         order = tmp[column])
+  mutate(
+    width = 0.015,
+    order = tmp[column]
+  )
 
 # now, I am going to add a label column which is what we want printed on each of these
-
 ```
 
 
@@ -324,14 +324,16 @@ annotation_columns <- rosa2_sorted %>%
 I want to add to that a row at the bottom which says whether the "spring" allele is ancestral or derived or unknown (because there
 is no Coho sequence at that point)
 ```{r}
-ancy_row <- big_haps2 %>% 
+ancy_row <- big_haps2 %>%
   count(POS, spring_allele) %>%
   select(-n) %>%
   left_join(haps_fix %>% select(POS, AA), by = "POS") %>%
-  mutate(value = ifelse(spring_allele == AA, "ancestral", "derived"),
-         row = "spring_anc_or_derived",
-         order = 3,
-         height = 0.02)
+  mutate(
+    value = ifelse(spring_allele == AA, "ancestral", "derived"),
+    row = "spring_anc_or_derived",
+    order = 3,
+    height = 0.02
+  )
 ```
 
 I also want to have a row below the exon info that shows whether the snp is synonymous or missense.
@@ -339,9 +341,11 @@ I also want to have a row below the exon info that shows whether the snp is syno
 codon_row <- cds_snps %>%
   select(POS, syn_v_nonsyn_codon_pos) %>%
   rename(value = syn_v_nonsyn_codon_pos) %>%
-  mutate(row = "codon_stuff",
-         order = 2,
-         height = 0.02)
+  mutate(
+    row = "codon_stuff",
+    order = 2,
+    height = 0.02
+  )
 ```
 
 So make a tibble with everything.  We can semi-join this thing for different
@@ -352,9 +356,11 @@ annotation_rows_full <- bind_rows(
     ungroup() %>%
     select(POS, einc) %>%
     rename(value = einc) %>%
-    mutate(row = "exon_stuff",
-           order = 1,
-           height = 0.02),
+    mutate(
+      row = "exon_stuff",
+      order = 1,
+      height = 0.02
+    ),
   codon_row,
   ancy_row
 ) %>%
@@ -379,23 +385,27 @@ source("R/function_extra_labels.R")
 ```{r}
 plist <- prep_elements(12.1e6, 12.6e6, 0.05e6, format = "%.2f", DSET = big_haps2_jc)
 
-jca <- haplo_raster_plot(D = plist$D, 
-                       h_ord = h_ord_eco_line_pop_springy_jc, 
-                       pos_annot = plist$pos_annot, 
-                       pos_bar_text_size = 8.0,
-                       highlight_pos = h_pos_for_paper,
-                       annotation_columns = annotation_columns,
-                       annotation_rows = plist$ann_rows, 
-                       fcolors = fcolors_all_sf, 
-                       anno_row_start = 10,
-                       snp_quant_tibble = plist$repcontent,
-                       no_legend = TRUE, 
-                       no_y_labels = TRUE, 
-                       no_x_labels = TRUE)
+jca <- haplo_raster_plot(
+  D = plist$D,
+  h_ord = h_ord_eco_line_pop_springy_jc,
+  pos_annot = plist$pos_annot,
+  pos_bar_text_size = 8.0,
+  highlight_pos = h_pos_for_paper,
+  annotation_columns = annotation_columns,
+  annotation_rows = plist$ann_rows,
+  fcolors = fcolors_all_sf,
+  anno_row_start = 10,
+  snp_quant_tibble = plist$repcontent,
+  no_legend = TRUE,
+  no_y_labels = TRUE,
+  no_x_labels = TRUE
+)
 
-jca2 <- extra_labels(g = jca, D = plist$D, h_ord = h_ord_eco_line_pop_springy_jc, 
-                   xmids = plist$ac_x_midpoints, ymids = plist$ar_y_midpoints,
-                   row_just = 0.5) +
+jca2 <- extra_labels(
+  g = jca, D = plist$D, h_ord = h_ord_eco_line_pop_springy_jc,
+  xmids = plist$ac_x_midpoints, ymids = plist$ar_y_midpoints,
+  row_just = 0.5
+) +
   expand_limits(x = -130, y = 337)
 
 # now, fill in the white space in the annotation columns with the gray color.
@@ -406,7 +416,6 @@ jca3 <- jca2 +
 
 
 ggsave(jca3, filename = "outputs/006/haplo-raster-alleles.pdf", width = 49, height = 30)
-
 ```
 
 
@@ -437,32 +446,37 @@ fish_ords <- tibble(fish = h_ord_eco_line_pop_springy) %>%
 
 top_y <- nrow(fish_ords) - fish_ords$idx[fish_ords$winter_num == 5] + 1
 bot_y <- nrow(fish_ords) - fish_ords$idx[nrow(fish_ords)] + 1
-
 ```
 
 ```{r}
-g <- haplo_raster_plot(D = plist$D, 
-                       h_ord = h_ord_eco_line_pop_springy, 
-                       pos_annot = plist$pos_annot, 
-                       pos_bar_text_size = 8.0,
-                       highlight_pos = h_pos_for_paper,
-                       annotation_columns = annotation_columns,
-                       annotation_rows = plist$ann_rows, 
-                       fcolors = fcolors_all_sf, 
-                       anno_row_start = 10,
-                       snp_quant_tibble = plist$repcontent,
-                       plot_read_depths = TRUE,
-                       no_y_labels = TRUE, 
-                       no_x_labels = TRUE)
+g <- haplo_raster_plot(
+  D = plist$D,
+  h_ord = h_ord_eco_line_pop_springy,
+  pos_annot = plist$pos_annot,
+  pos_bar_text_size = 8.0,
+  highlight_pos = h_pos_for_paper,
+  annotation_columns = annotation_columns,
+  annotation_rows = plist$ann_rows,
+  fcolors = fcolors_all_sf,
+  anno_row_start = 10,
+  snp_quant_tibble = plist$repcontent,
+  plot_read_depths = TRUE,
+  no_y_labels = TRUE,
+  no_x_labels = TRUE
+)
 
-g2 <- extra_labels(g = g, D = plist$D, h_ord = h_ord_eco_line_pop_springy, 
-                   xmids = plist$ac_x_midpoints, ymids = plist$ar_y_midpoints,
-                   row_just = 0.5) +
+g2 <- extra_labels(
+  g = g, D = plist$D, h_ord = h_ord_eco_line_pop_springy,
+  xmids = plist$ac_x_midpoints, ymids = plist$ar_y_midpoints,
+  row_just = 0.5
+) +
   expand_limits(x = -130, y = 337) +
-  theme(legend.key.width = unit(1.3, "in"),
-        legend.key.height = unit(2, "in"),
-        legend.text = element_text(size = 48.0),
-        legend.title = element_text(size = 48.0)) +
+  theme(
+    legend.key.width = unit(1.3, "in"),
+    legend.key.height = unit(2, "in"),
+    legend.text = element_text(size = 48.0),
+    legend.title = element_text(size = 48.0)
+  ) +
   annotate("rect", xmin = left_x, xmax = right_x, ymin = bot_y, ymax = top_y, fill = NA, colour = "orange", alpha = 0.5, size = 4)
 
 ggsave(g2, filename = "outputs/006/haplo-raster-read-depths.pdf", width = 49, height = 30)
