@@ -57,7 +57,8 @@ of cluster computing resources are described and documented, but will not be run
 by evaluating the RMarkdown document.  Implementing them yourself will
 require modification for the vagaries of your own high performance computing system and
 preferred mode of parallelization, etc.  Running some of the RMarkdown documents requires
-a proper shell.  These were run on a Mac.
+a proper shell.  These were initially developed and run on a Mac. They have also
+been tested and confirmed to run on a server running CentOs 7.
 
 Rmarkdown documents in the 000 series were developed primarily by Eric C. Anderson.
 Rmarkdown documents in the 100 series were developed primarily by Neil F. Thompson.
@@ -91,7 +92,7 @@ Rmarkdown document  | Run time
 010-salmon-river-carcasses.Rmd | 48.2 secs
 011-recombinant-frequencies.Rmd | 1.5 mins
 012-coalescent-modeling-of-recombinants.Rmd | 3.5 mins
-100-RoSA-figure1-map-using-sf.Rmd | 16.4 secs
+100-RoSA-figure1-map.Rmd | 16.4 secs
 101-Klamath-estuary-GSI-rubias.Rmd | 18.0 secs
 102-Klamath-estuary-ANOVA-sampling-date-RoSA.Rmd | 11.0 secs
 102.1-Klamath-estuary-partial-correlation.Rmd  | 1.6 secs
@@ -186,7 +187,7 @@ used on Eric's laptop appear in parentheses.
 * [`PHASE`](http://stephenslab.uchicago.edu/phase/download.html) (Version 2.1.1)
 * [`lastz`](http://www.bx.psu.edu/~rsharris/lastz/) (Version 1.04) This was obtained and compiled thus:
     ```{sh, eval=FALSE}
-    wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.03.tar.gz # slightly older version than originally used on my Mac
+    wget http://www.bx.psu.edu/~rsharris/lastz/lastz-1.04.03.tar.gz
     gunzip lastz-1.04.03.tar.gz
     tar -xvf lastz-1.04.03.tar
     cd lastz-distrib-1.04.03/
@@ -219,7 +220,7 @@ of Jar files on Eric's system:
 ```sh
 `r paste(readLines("script/java-jar-paths.sh"), collapse = "\n")`
 ```
-This should be updated to reflect where your have stored the jar files on your
+This should be updated to reflect where you have stored the jar files on your
 system.
 
 One more Java program---snpEff---is required.  The installation procedure for this
@@ -229,7 +230,7 @@ where the Jar file resides (apparently).
 So, 
 
 1. Download [`snpEff`](https://sourceforge.net/projects/snpeff/files/snpEff_v4_3t_core.zip/download) The link provided is for 
-Version 4.3 with a release data of 24 November 2017.  THis is the version we used.
+Version 4.3 with a release date of 24 November 2017.  THis is the version we used.
 2. Expand that zip archive and move the resulting directory into  
 the top level of this repository.  When you are done, you should be
 able to `ls` the Jar file like this:
@@ -256,11 +257,11 @@ when run in the top level
 of this repository.
 Some RMarkdown documents rely on
 outputs from previous ones.  Some of these RMarkdown documents include
-calls to Unix utilities, so might not run on non Unix or Linux architectures.
+calls to Unix utilities, so might not run on non-Unix or non-Linux architectures.
 
 Outputs (figures, tables, R data objects, etc) from each RMarkdown document
 are written to the `outputs/XXX` directories.  Intermediate files
-written during evaluation of each RMarkdown document are written (usually)
+written during evaluation of each RMarkdown document are written
 to the `intermediates/XXX` directories. To facilitate working between
 the cluster and a desktop/laptop, some outputs are written to
 the `stored_results/XXX` directories which are version controlled and
@@ -279,7 +280,7 @@ in the designation of the alleles as ancestral or not in some of the haplotype r
 
 ## `r make_link("002-allele-frequencies.Rmd")`
 
-Calculation of allele frequency differences between early and late running forms
+Calculation of allele frequency differences between early- and late-running forms
 across the genome, and around GREB1L, and the generation of plots.
 
 [![](./docs/images_and_thumbs/allele-freqs-figure_thumb.png)][alle_freqs]
@@ -287,8 +288,8 @@ across the genome, and around GREB1L, and the generation of plots.
 
 ## `r make_link("003-extract-johnson-creek-variants.Rmd")`
 
-Use the previously assembled Chinook genome from @narumGenomicVariationUnderlying2018
-to ascertain variation from that Upper Columbia River summer/spring run fish
+Using the previously assembled Chinook salmon genome from @narumGenomicVariationUnderlying2018
+to ascertain variation from that Upper Columbia River summer/spring-run fish
 around the GREB1L region.  The products of this analysis go into some later trees and
 haplotype rasters.
 
@@ -316,7 +317,7 @@ then making haplotype raster plots using functions from the
 
 ## `r make_link("007-arg-inference-and-plotting.Rmd")`
 
-Use RENT+ [@mirzaei2016rentplus] to infer the ancestral recombination graph in the
+Using RENT+ [@mirzaei2016rentplus] to infer the ancestral recombination graph in the
 RoSA and plot it with a tree/heatmap, using ggtree [@yuGgtreePackageVisualization2017].
 
 [![](./docs/images_and_thumbs/ultra-heatmap-bg-white_thumb.png)][arg_tree]
@@ -352,7 +353,7 @@ Salmon River carcasses.  Data from here also go into Table S7
 ## `r make_link("011-recombinant-frequencies.Rmd")`
 
 Determining frequencies of recombinant haplotypes between the RoSA region and the
-imperfectly associated SNPs reported in @princeEvolutionaryBasisPremature2017.  
+imperfectly associated SNPs reported in @princeEvolutionaryBasisPremature2017.
 Data from this RMarkdown document go into Table S9
 ("Frequencies of haplotypes recombinant/non-recombinant
 between the distal and RoSA region in collections from California and Oregon").
@@ -361,8 +362,8 @@ between the distal and RoSA region in collections from California and Oregon").
 
 ## `r make_link("012-coalescent-modeling-of-recombinants.Rmd")`
 
-Performing discrete time coalescent-with-recombination simulations to determine the
-likelihood of seeing such a high recombinant frequency in the Iron Gate Hatchery
+Performing discrete-time, coalescent-with-recombination simulations to determine whether we
+expect to see such a high recombinant frequency in the Klamath River --- Iron Gate Hatchery collection
 if spring-fall introgression only occurred after human modifications to the watershed.
 
 [![](./docs/images_and_thumbs/table-s10-recom-sim-params_thumb.png)][recomb_sim_params]
