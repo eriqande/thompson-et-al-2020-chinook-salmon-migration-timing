@@ -3,7 +3,10 @@ Thompson et. al. 2020, Data and Code Repository
 Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell,
 Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza
 
-**Last Updated:** 2020-05-14
+**Last Updated:**
+2020-05-14
+
+[![DOI](https://zenodo.org/badge/263405637.svg)](https://zenodo.org/badge/latestdoi/263405637)
 
 This repository includes code, data, and some intermediate results to
 reproduce the results in Thompson et al. (“A complex phenotype in salmon
@@ -257,8 +260,6 @@ So,
 ``` sh
 ls snpEff_v4_3t_core/snpEff/snpEff.jar 
 ```
-
-    ## snpEff_v4_3t_core/snpEff/snpEff.jar
 
 ## R Packages
 
