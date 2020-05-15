@@ -1,7 +1,7 @@
 Thompson et. al. 2020, Data and Code Repository
 ================
 Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell,
-Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza
+Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza
 
 **Last Updated:**
 2020-05-15

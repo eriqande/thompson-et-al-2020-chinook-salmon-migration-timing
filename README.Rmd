@@ -1,13 +1,13 @@
 ---
 title: "Thompson et. al. 2020, Data and Code Repository"
-author: "Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger6, John Carlos Garza"
+author: "Neil F. Thompson, Eric C. Anderson, Anthony Clemento, Matthew Campbell, Devon E. Pearse, James Hearsey, Andrew P. Kinziger, John Carlos Garza"
 output: 
-  github_document:
-    toc: true
-    toc_depth: 3
   html_document:
     toc: true
     toc_float: true
+    toc_depth: 3
+  github_document:
+    toc: true
     toc_depth: 3
 bibliography: references.bib
 ---
@@ -26,7 +26,7 @@ Dbase <- "./"
 
 # choose the one that you want here depending on if you are on the
 # GitHub README or are making an index.html for the docs directory
-hdir <- GPbase
+hdir <- Dbase
 
 make_link <- function(Rmd, base = hdir) {
   nb <- stringr::str_replace(Rmd, "Rmd$", "html")
