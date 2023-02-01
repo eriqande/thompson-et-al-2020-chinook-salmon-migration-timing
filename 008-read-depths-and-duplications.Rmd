@@ -536,7 +536,7 @@ are homozygous for the alleles associated with the duplicated ("fall") form of t
 haplotype, but some are heterozygous.  So, let's pull those haplotypes out
 and filter down to just the duplicated region:
 ```{r}
-dr_bh <- read_rds(path = "outputs/004/big_haps2.rds") %>%
+dr_bh <- read_rds(file = "stored_results/004/big_haps2.rds") %>%
   filter(POS > 12311027 & POS < 12321906)
 ```
 
@@ -576,7 +576,7 @@ ggplot(NumS_alle_by_indiv, aes(x = fracS_alleles, fill = ecotype)) +
   geom_histogram(bins = 25, colour = "black", size = 0.1) +
   facet_wrap(~ecotype) +
   expand_limits(x = 0) +
-  scale_fill_manual(values = fcolors_all_sf) +
+  scale_fill_manual(values = fcolors_all_sf[c("Fall", "Late_Fall", "Spring", "Winter")]) +
   theme_bw()
 ```
 
@@ -621,7 +621,7 @@ Now, we should be ready to make a plot.
 ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type, colour = Diplotype)) +
   geom_point(shape = 21, size = 2.0) +
   facet_wrap(~Domain) +
-  scale_fill_manual(values = fcolors_all_sf) +
+  scale_fill_manual(values = fcolors_all_sf[c("Fall", "Late_Fall", "Spring", "Winter")]) +
   theme_bw()
 ```
 
@@ -632,7 +632,7 @@ use that.
 g101 <- ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type)) +
   geom_point(shape = 21, size = 2.5, stroke = 0.3) +
   facet_wrap(~Domain) +
-  scale_fill_manual(values = fcolors_all_sf) +
+  scale_fill_manual(values = fcolors_all_sf[c("Fall", "Late_Fall", "Spring", "Winter")]) +
   theme_bw() +
   geom_abline(slope = c(1, 2), intercept = 0, linetype = "dashed") +
   guides(fill = guide_legend(title = "Ecotype")) +
