@@ -616,6 +616,12 @@ indy_pred_by_spring <- rdrm_new_domain %>%
   ))
 ```
 
+2023 update: we need `indy_pred_by_spring` for another paper.  So, we will
+write that out for use:
+```{r}
+write_rds(indy_pred_by_spring, file = "outputs/008/THOMPSON-2020-indy_pred_by_spring.rds", compress = "xz")
+```
+
 Now, we should be ready to make a plot.
 ```{r}
 ggplot(indy_pred_by_spring, aes(x = pred_domain_reads, y = reads, fill = run_type, colour = Diplotype)) +
